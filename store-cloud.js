@@ -112,8 +112,25 @@ function cloudStore(db, uid, onChange) {
       return enqueue('weights', () => weightsRef.set(doc))
         .catch(e => { state.weights = prev; onChange({}); throw e; });
     },
+    // A backup in the installed app's format. The page only keeps recent days live, so every day and
+    // session is read here, a page at a time.
+    async exportData() {
+      const all = async col => {
+        const out = {};
+        for (let last = ''; ;) {
+          const q = await col.orderBy('date').where('date', '>', last).limit(500).get();
+          for (const s of q.docs) out[s.id] = s.data();
+          if (q.docs.length < 500) return out;
+          last = q.docs[q.docs.length - 1].data().date;
+        }
+      };
+      const [days, lifts] = await Promise.all([all(daysCol), all(liftsCol)]);
+      return backup({ ...state, days, lifts });
+    },
   };
 }
+
+const backup = s => ({ app: 'plate-ledger', version: 1, exportedAt: new Date().toISOString(), profile: s.profile || null, weights: s.weights || null, prefs: s.prefs || null, days: s.days || {}, lifts: s.lifts || {} });
 
 function localStore(onChange) {
   let saved = { profile: null, days: {}, weights: null, prefs: null, lifts: {} };
@@ -157,5 +174,6 @@ function localStore(onChange) {
       onChange({});
       if (!persist()) throw { code: 'local_full', message: 'This browser refused to save.' };
     },
+    async exportData() { return backup(saved); },
   };
 }

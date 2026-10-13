@@ -1,7 +1,7 @@
 // Installed-app settings: the Anthropic API key and model (kept in this device's localStorage and sent
 // only to api.anthropic.com), backups, and the "Add to Home Screen" hint for Safari.
 import { MODELS, DEFAULT_MODEL, checkKey } from './ai.js';
-import { validateBackup } from './store.js';
+import { validateBackup, mergeBackup } from './store.js';
 
 const $ = id => document.getElementById(id);
 const KEY = 'plate-ledger-settings';
@@ -38,7 +38,7 @@ export function initDeviceSettings(c) {
     </form>`;
   $('backup-card').hidden = false;
   $('backup-card').innerHTML = `<div class="card-head"><h2>Backup</h2></div>
-    <p class="fine" style="margin-bottom:12px">Your meals, weigh-ins, lifting and details live on this phone. Export a backup to Files now and then; import it to restore or move to a new phone.</p>
+    <p class="fine" style="margin-bottom:12px">Your meals, weigh-ins, lifting and details live on this phone. Export a backup to Files now and then; import it to restore, move to a new phone, or bring in your log from the claude.ai version.</p>
     <div class="backup-actions"><button type="button" class="btn btn-tinted btn-sm" id="export-btn">Export backup</button>
       <input type="file" id="import-file" accept="application/json,.json" class="visually-hidden"><label for="import-file" class="btn btn-plain btn-sm">Import backup</label></div>
     <div id="import-confirm" aria-live="polite"></div>
@@ -113,19 +113,26 @@ async function onImportFile(e) {
   if (err) return showImport(err);
   pendingImport = data;
   const days = Object.keys(data.days || {}).length, w = data.weights?.entries?.length || 0, l = Object.keys(data.lifts || {}).length;
-  showImport(`Backup from ${new Date(data.exportedAt).toLocaleDateString()}: ${days} days of meals, ${w} weigh-ins and ${l} lifting sessions. Restoring replaces everything on this device.`, true);
+  const from = Number.isNaN(Date.parse(data.exportedAt)) ? 'Backup' : `Backup from ${new Date(data.exportedAt).toLocaleDateString()}`;
+  const cur = ctx.store().exportData();
+  const hasLog = Object.keys(cur.days).length || cur.weights?.entries?.length || Object.keys(cur.lifts).length;
+  const n = (k, word) => `${k} ${word}${k === 1 ? '' : 's'}`;
+  showImport(`${from}: ${n(days, 'day')} of meals, ${n(w, 'weigh-in')} and ${n(l, 'lifting session')}.${hasLog ? ' This phone already has a log. Add the backup to it, or replace it entirely.' : ''}`, hasLog ? 'merge' : 'restore');
 }
 
-function showImport(msg, confirm = false) {
-  $('import-confirm').innerHTML = `<p class="fine">${esc(msg)}</p>${confirm
-    ? '<div class="backup-actions"><button type="button" class="btn btn-primary btn-sm" data-act="restore">Replace with this backup</button><button type="button" class="btn btn-plain btn-sm" data-act="cancel">Cancel</button></div>' : ''}`;
+function showImport(msg, mode = null) {
+  const actions = mode === 'merge'
+    ? '<button type="button" class="btn btn-primary btn-sm" data-act="merge">Add to this phone’s log</button><button type="button" class="btn btn-plain btn-sm" data-act="restore">Replace everything</button><button type="button" class="link-btn" data-act="cancel">Cancel</button>'
+    : '<button type="button" class="btn btn-primary btn-sm" data-act="restore">Restore this backup</button><button type="button" class="btn btn-plain btn-sm" data-act="cancel">Cancel</button>';
+  $('import-confirm').innerHTML = `<p class="fine">${esc(msg)}</p>${mode ? `<div class="backup-actions">${actions}</div>` : ''}`;
 }
 
 async function onImportConfirm(e) {
   const b = e.target.closest('[data-act]');
   if (!b) return;
-  if (b.dataset.act === 'restore' && pendingImport) {
-    try { await ctx.store().importData(pendingImport); ctx.toast('Backup restored'); ctx.onRestore(); }
+  if ((b.dataset.act === 'restore' || b.dataset.act === 'merge') && pendingImport) {
+    const data = b.dataset.act === 'merge' ? mergeBackup(ctx.store().exportData(), pendingImport) : pendingImport;
+    try { await ctx.store().importData(data); ctx.toast(b.dataset.act === 'merge' ? 'Backup added to your log' : 'Backup restored'); ctx.onRestore(); }
     catch (err) { ctx.toast(ctx.saveError(err)); }
   }
   pendingImport = null;

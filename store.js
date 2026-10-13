@@ -100,6 +100,28 @@ export async function openStore(onChange) {
   };
 }
 
+// Combines a backup with this device's log so nothing on either side is lost: meals match by id,
+// weigh-ins and lifting sessions by date (this device's version wins), exercises within a session by name.
+export function mergeBackup(cur, data) {
+  const days = { ...(data.days || {}) };
+  for (const [d, doc] of Object.entries(cur.days || {})) {
+    const ids = new Set(doc.entries.map(e => e.id));
+    days[d] = { ...doc, entries: [...doc.entries, ...(days[d]?.entries || []).filter(e => !ids.has(e.id))] };
+  }
+  const lifts = { ...(data.lifts || {}) };
+  const key = x => String(x?.name || '').trim().toLowerCase();
+  for (const [d, doc] of Object.entries(cur.lifts || {})) {
+    const names = new Set(doc.exercises.map(key));
+    lifts[d] = { ...doc, exercises: [...doc.exercises, ...(lifts[d]?.exercises || []).filter(x => !names.has(key(x)))] };
+  }
+  const byDay = new Map((data.weights?.entries || []).map(w => [w.d, w]));
+  for (const w of cur.weights?.entries || []) byDay.set(w.d, w);
+  const weights = cur.weights || data.weights
+    ? { entries: [...byDay.values()].sort((a, b) => String(a.d).localeCompare(String(b.d))), goalKg: cur.weights?.goalKg ?? data.weights?.goalKg ?? null }
+    : null;
+  return { ...data, profile: cur.profile || data.profile || null, prefs: cur.prefs || data.prefs || null, weights, days, lifts };
+}
+
 // Checks a parsed backup file before anything is replaced.
 export function validateBackup(data) {
   if (!data || data.app !== 'plate-ledger' || data.version !== 1) return 'This file is not a LiftrTrackr backup.';
