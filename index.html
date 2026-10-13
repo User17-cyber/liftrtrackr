@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https://api.anthropic.com; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'">
+<meta name="referrer" content="no-referrer">
+<title>LiftrTrackr</title>
+<meta name="description" content="Calories, bodyweight and lifting in one place. Claude identifies each food; USDA FoodData Central supplies every number.">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="LiftrTrackr">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#f2f5f3" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0f1311" media="(prefers-color-scheme: dark)">
+<link rel="stylesheet" href="styles.css">
+<script src="boot-theme.js"></script>
+</head>
+<body>
+<!--BODY-->
+<div class="app">
+  <header class="appbar">
+    <div class="brand"><span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6.5 6.5v11M17.5 6.5v11M3.5 9.5v5M20.5 9.5v5M6.5 12h11"/></svg></span>LiftrTrackr</div>
+    <nav class="tabbar tabbar-top" aria-label="Sections">
+      <button type="button" data-tab="calories" aria-selected="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3v7a2 2 0 0 0 4 0V3M9 12v9M17 21V3c-2 1.5-3 4-3 7 0 1.7 1.3 3 3 3"/></svg>Calories</button>
+      <button type="button" data-tab="weight" aria-selected="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="3.5" width="17" height="17" rx="5"/><path d="M8.5 10.5a4 4 0 0 1 7 0M12 10.5l1.4-1.8"/></svg>Weight</button>
+      <button type="button" data-tab="lifting" aria-selected="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6.5 6.5v11M17.5 6.5v11M3.5 9.5v5M20.5 9.5v5M6.5 12h11"/></svg>Lifting</button>
+      <button type="button" data-tab="settings" aria-selected="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg>Settings</button>
+    </nav>
+  </header>
+  <div id="install-hint" class="install-hint" hidden>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M8 7l4-4 4 4"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg>
+    <span>Install: tap <b>Share</b>, then <b>Add to Home Screen</b>.</span>
+    <button type="button" class="icon-btn" aria-label="Dismiss install tip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+  </div>
+  <p id="store-note" class="store-note" hidden><span id="store-note-text"></span></p>
+
+  <div id="datebar" class="datebar" role="group" aria-label="Day">
+    <button id="day-prev" class="icon-btn" type="button" aria-label="Previous day"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg></button>
+    <button id="day-today" class="date-label link-btn" type="button" aria-live="polite"><span id="day-name">Today</span><small id="day-date"></small></button>
+    <button id="day-next" class="icon-btn" type="button" aria-label="Next day"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg></button>
+  </div>
+
+  <main>
+    <!-- Calories -->
+    <section class="view" id="view-calories" aria-label="Calories">
+      <div class="view-head"><h1>Calories</h1><div class="date-slot"></div></div>
+      <div class="view-grid">
+        <div class="stack">
+          <div class="card" id="summary" aria-live="polite"></div>
+          <div class="card" id="log">
+            <div class="card-head"><h2>Log a meal</h2></div>
+            <div id="capture" class="capture" inert>
+              <input type="file" id="photo-input" accept="image/*" class="visually-hidden">
+              <label for="photo-input" id="dropzone" class="dropzone">
+                <span class="dz-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3.5"/></svg></span>
+                <span><strong>Add a meal photo</strong><span class="hint"><span class="hint-fine">Drop, choose or paste a photo</span><span class="hint-touch">Take a photo or pick one from your library</span></span></span>
+              </label>
+              <div id="photo-preview" class="photo-preview" hidden></div>
+              <div id="note-wrap" class="field" hidden>
+                <label for="meal-note">Details the photo can't show <span class="opt">(optional)</span></label>
+                <textarea id="meal-note" rows="2" placeholder="Cooked in 1 tbsp olive oil · ate about half"></textarea>
+              </div>
+              <div class="capture-links">
+                <button id="describe-btn" class="link-btn" type="button">Describe a meal instead</button>
+                <button id="manual-btn" class="link-btn" type="button">Search foods</button>
+                <button id="numbers-btn" class="link-btn" type="button">Enter calories &amp; macros</button>
+              </div>
+              <button id="analyze-btn" class="btn btn-primary flow-primary" type="button" disabled>Analyze photo</button>
+            </div>
+            <form id="quick" class="quick" hidden novalidate aria-labelledby="quick-h">
+              <div class="quick-head"><h3 id="quick-h">Enter calories &amp; macros</h3><button type="button" class="link-btn" id="q-cancel">Cancel</button></div>
+              <div class="field"><label for="q-title">What you ate <span class="opt">(optional)</span></label><input id="q-title" type="text" maxlength="80" placeholder="Protein shake" autocomplete="off" autocapitalize="sentences" enterkeyhint="next"></div>
+              <div class="quick-pair">
+                <div class="field"><label for="q-kcal">Calories</label><div class="field-row"><input id="q-kcal" type="number" inputmode="decimal" min="0" max="20000" step="any" enterkeyhint="next"><span class="u">kcal</span></div></div>
+                <div class="field"><label for="q-meal">Meal</label><select id="q-meal"></select></div>
+              </div>
+              <div id="q-hint" class="quick-hint" aria-live="polite" hidden></div>
+              <fieldset class="quick-macros">
+                <legend>Macros <span class="opt">(optional)</span></legend>
+                <div class="quick-row">
+                  <div class="field"><label for="q-protein">Protein</label><div class="field-row"><input id="q-protein" type="number" inputmode="decimal" min="0" max="2000" step="any" enterkeyhint="next"><span class="u">g</span></div></div>
+                  <div class="field"><label for="q-carb">Carbs</label><div class="field-row"><input id="q-carb" type="number" inputmode="decimal" min="0" max="2000" step="any" enterkeyhint="next"><span class="u">g</span></div></div>
+                  <div class="field"><label for="q-fat">Fat</label><div class="field-row"><input id="q-fat" type="number" inputmode="decimal" min="0" max="2000" step="any" enterkeyhint="done"><span class="u">g</span></div></div>
+                </div>
+              </fieldset>
+              <button type="submit" class="btn btn-primary btn-block" id="q-log">Add to today</button>
+              <p id="q-error" class="form-error" role="alert" hidden></p>
+            </form>
+            <div id="progress" class="progress" hidden>
+              <div class="progress-head"><strong id="progress-title" aria-live="polite">Claude is looking at your plate</strong><span id="progress-time" class="num muted">0:00</span><button id="stop-btn" class="btn btn-plain btn-sm flow-primary" type="button">Stop</button></div>
+              <div class="runner" aria-hidden="true"></div>
+              <ol id="progress-steps" class="steps"></ol>
+            </div>
+            <div id="analyze-error" class="notice" role="alert" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5M12 16.5h.01"/></svg><span><span id="analyze-error-text"></span> <button id="analyze-error-link" type="button" class="link-btn" data-goto="settings" hidden>Open Settings</button></span></div>
+            <div id="result" class="result"></div>
+          </div>
+          <div class="card" id="meals">
+            <div class="card-head"><h2 id="meals-h">Today’s meals</h2><span id="meals-count" class="muted"></span></div>
+            <div id="meal-list"></div>
+          </div>
+        </div>
+        <div class="stack">
+          <div class="card" id="history">
+            <div class="card-head"><h2>Last 14 days</h2><span class="muted">tap a day</span></div>
+            <div id="history-chart" class="chart"></div>
+          </div>
+          <div class="card" id="maintenance">
+            <div class="card-head"><h2>Maintenance</h2><button type="button" class="link-btn" data-goto="settings">Edit details</button></div>
+            <div id="tdee-out"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Weight -->
+    <section class="view" id="view-weight" aria-label="Weight" hidden>
+      <div class="view-head"><h1>Weight</h1></div>
+      <div class="view-grid">
+        <div class="stack">
+          <div class="card">
+            <div id="wt-hero" class="wt-hero"></div>
+            <form id="wt-form" class="wt-form" novalidate>
+              <div class="field"><label for="wt-value">Weight</label><div class="field-row"><input id="wt-value" type="number" inputmode="decimal" step="0.1" min="20"><span class="u" id="wt-unit">kg</span></div></div>
+              <div class="field"><label for="wt-date">Date</label><input id="wt-date" type="date"></div>
+              <button class="btn btn-primary" type="submit" id="wt-save">Save weigh-in</button>
+              <p id="wt-error" class="form-error" role="alert" hidden></p>
+            </form>
+          </div>
+          <div class="card">
+            <div class="card-head"><h2>Bodyweight</h2></div>
+            <div class="toolbar"><div class="seg seg-inline" id="wt-ranges" role="group" aria-label="Chart range"></div><div class="legend" aria-hidden="true"><span><span class="dot"></span>Weigh-in</span><span><span class="line"></span>Trend</span></div></div>
+            <div id="wt-chart" class="chart"></div>
+            <p id="wt-readout" class="readout" aria-live="polite"></p>
+          </div>
+        </div>
+        <div class="stack">
+          <div class="card"><div class="card-head"><h2>Insights</h2></div><div id="wt-stats"></div></div>
+          <div class="card">
+            <div class="card-head"><h2>Goal</h2></div>
+            <form id="wt-goal-form" class="goal-form" novalidate>
+              <div class="field"><label for="wt-goal">Goal weight</label><div class="field-row"><input id="wt-goal" type="number" inputmode="decimal" step="0.1" min="20"><span class="u" id="wt-goal-unit">kg</span></div></div>
+              <button class="btn btn-tinted" type="submit">Save goal</button>
+              <button class="link-btn danger" type="button" id="wt-goal-clear" hidden>Clear</button>
+              <p id="wt-goal-error" class="form-error" role="alert" hidden></p>
+            </form>
+          </div>
+          <div class="card"><div class="card-head"><h2>Weigh-ins</h2></div><div id="wt-list"></div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Lifting -->
+    <section class="view" id="view-lifting" aria-label="Lifting" hidden>
+      <div class="view-head"><h1>Lifting</h1><div class="date-slot"></div></div>
+      <p id="lift-week" class="view-sub"></p>
+      <div class="view-grid">
+        <div class="stack">
+          <div class="card">
+            <div class="card-head"><h2 id="lift-session-h">Session</h2></div>
+            <div id="lift-session"></div>
+            <div class="add-ex">
+              <label class="visually-hidden" for="lift-new">Exercise to add</label>
+              <input id="lift-new" type="text" list="lift-names" placeholder="Add an exercise" autocomplete="off" autocapitalize="words" enterkeyhint="done" maxlength="60">
+              <button type="button" class="btn btn-tinted" id="lift-add">Add</button>
+            </div>
+            <datalist id="lift-names"></datalist>
+          </div>
+        </div>
+        <div class="stack">
+          <div class="card">
+            <div class="card-head"><h2>Progress</h2></div>
+            <div id="lift-progress"></div>
+            <div id="lift-tools" hidden>
+              <div class="toolbar"><div class="seg seg-inline" id="lift-ranges" role="group" aria-label="Chart range"></div></div>
+              <div id="lift-charts"></div>
+              <p id="lift-readout" class="readout" aria-live="polite"></p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Settings -->
+    <section class="view" id="view-settings" aria-label="Settings" hidden>
+      <div class="view-head"><h1>Settings</h1></div>
+      <div class="view-grid even">
+        <div class="stack">
+          <div class="card" id="appearance">
+            <div class="card-head"><h2>Appearance</h2></div>
+            <div class="settings-form">
+              <div class="field"><span class="field-label">Theme</span>
+                <div class="seg" role="radiogroup" aria-label="Theme">
+                  <label><input type="radio" name="scheme" value="system" checked>System</label>
+                  <label><input type="radio" name="scheme" value="light">Light</label>
+                  <label><input type="radio" name="scheme" value="dark">Dark</label>
+                </div>
+              </div>
+              <div class="field"><span class="field-label">Color scheme</span>
+                <div class="swatches" role="radiogroup" aria-label="Color scheme" id="swatches"></div>
+              </div>
+              <div class="field"><span class="field-label">Units</span>
+                <div class="seg" role="radiogroup" aria-label="Units">
+                  <label><input type="radio" name="units" value="metric" checked>kg · cm</label>
+                  <label><input type="radio" name="units" value="us">lb · ft/in</label>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="card" id="profile">
+            <div class="card-head"><h2>Your details</h2></div>
+            <p class="fine" style="margin-bottom:12px">Used to estimate the calories you burn. Only you can see them.</p>
+            <form id="profile-form" class="settings-form" novalidate>
+              <div class="field"><span class="field-label">Sex used by the equations</span>
+                <div class="seg" role="radiogroup" aria-label="Sex used by the equations">
+                  <label><input type="radio" name="sex" value="female" id="pf-sex-f">Female</label>
+                  <label><input type="radio" name="sex" value="male" id="pf-sex-m">Male</label>
+                </div>
+              </div>
+              <div class="two">
+                <div class="field"><label for="pf-age">Age</label><div class="field-row"><input id="pf-age" type="number" inputmode="numeric" min="18" max="100" step="1"><span class="u">yrs</span></div></div>
+                <div class="field"><label for="pf-weight">Weight</label><div class="field-row"><input id="pf-weight" type="number" inputmode="decimal" step="0.1"><span class="u" id="pf-weight-u">kg</span></div></div>
+              </div>
+              <div class="field" id="height-metric"><label for="pf-height-cm">Height</label><div class="field-row"><input id="pf-height-cm" type="number" inputmode="decimal" step="0.5"><span class="u">cm</span></div></div>
+              <div class="field" id="height-us" hidden><label for="pf-height-ft">Height</label><div class="field-row"><input id="pf-height-ft" type="number" inputmode="numeric" min="3" max="7" step="1" aria-label="Height, feet"><span class="u">ft</span><input id="pf-height-in" type="number" inputmode="decimal" min="0" max="11.9" step="0.5" aria-label="Height, inches"><span class="u">in</span></div></div>
+              <div class="field"><label for="pf-activity">Activity level</label><select id="pf-activity"></select><div class="hint" id="pf-activity-hint"></div></div>
+              <div class="field"><label for="pf-bodyfat">Body fat <span class="opt">(optional)</span></label><div class="field-row"><input id="pf-bodyfat" type="number" inputmode="decimal" min="3" max="60" step="0.5"><span class="u">%</span></div></div>
+              <div class="field"><label for="pf-goal">Goal</label><select id="pf-goal"></select></div>
+              <p id="pf-error" class="form-error" role="alert" hidden></p>
+              <button class="btn btn-primary" type="submit">Save details</button>
+            </form>
+          </div>
+        </div>
+        <div class="stack">
+          <div class="card" id="ai-settings"></div>
+          <div class="card" id="backup-card" hidden></div>
+          <div class="card" id="sources">
+            <div class="card-head"><h2>About</h2></div>
+            <p class="fine">Nutrients from USDA FoodData Central; foods identified by Claude. Energy from the Mifflin-St Jeor equation and, once you have the data, from your own meals and weigh-ins. Estimates for tracking, not medical advice.</p>
+            <details class="disclose">
+              <summary><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>Sources</summary>
+              <ol>
+                <li>USDA Agricultural Research Service, <a href="https://fdc.nal.usda.gov/" target="_blank" rel="noopener">FoodData Central</a>: SR Legacy (April 2018) and FNDDS 2021–2023 (October 2024). <span id="food-count"></span></li>
+                <li>Mifflin MD, St Jeor ST, et al. <i>Am J Clin Nutr</i> 1990;51:241–7. Accuracy review: Frankenfield D, et al. <i>J Am Diet Assoc</i> 2005;105:775–89.</li>
+                <li>Roza AM, Shizgal HM (revised Harris-Benedict). <i>Am J Clin Nutr</i> 1984;40:168–82. Katch-McArdle: 370 + 21.6 × lean mass (kg).</li>
+                <li>Institute of Medicine, <i>Dietary Reference Intakes for Energy, Carbohydrate, Fiber, Fat, Fatty Acids, Cholesterol, Protein, and Amino Acids</i>, 2005.</li>
+                <li>Weight trend: exponentially smoothed average, 10% per day, after Walker J, <i>The Hacker's Diet</i> (1991). Energy balance uses about 7,700 kcal per kg (Hall KD, <i>Int J Obes</i> 2008;32:573–6).</li>
+                <li>Estimated one-rep max: Epley B, <i>Poundage Chart</i>, Boyd Epley Workout, 1985: weight × (1 + reps / 30).</li>
+              </ol>
+            </details>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div class="dock" id="dock">
+  <div id="actionbar" class="actionbar" hidden></div>
+  <nav class="tabbar tabbar-bottom" aria-label="Sections">
+    <button type="button" data-tab="calories" aria-selected="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3v7a2 2 0 0 0 4 0V3M9 12v9M17 21V3c-2 1.5-3 4-3 7 0 1.7 1.3 3 3 3"/></svg>Calories</button>
+    <button type="button" data-tab="weight" aria-selected="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="3.5" width="17" height="17" rx="5"/><path d="M8.5 10.5a4 4 0 0 1 7 0M12 10.5l1.4-1.8"/></svg>Weight</button>
+    <button type="button" data-tab="lifting" aria-selected="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6.5 6.5v11M17.5 6.5v11M3.5 9.5v5M20.5 9.5v5M6.5 12h11"/></svg>Lifting</button>
+    <button type="button" data-tab="settings" aria-selected="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg>Settings</button>
+  </nav>
+</div>
+<div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+<script type="module" src="app.js"></script>
+<!--/BODY-->
+</body>
+</html>

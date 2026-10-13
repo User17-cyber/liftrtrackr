@@ -1,0 +1,17 @@
+{
+  "name": "liftrtrackr",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Photo calorie and weight tracker. Installable web app; nutrient values from USDA FoodData Central.",
+  "type": "module",
+  "scripts": {
+    "vendor": "esbuild scripts/sdk-entry.js --bundle --format=esm --platform=browser --target=safari16 --minify --outfile=vendor/anthropic-sdk.js",
+    "icons": "python3 -I scripts/make_icons.py icons"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "0.128.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.1"
+  }
+}
