@@ -4,12 +4,19 @@
 
 const $ = id => document.getElementById(id);
 const CACHE = 'liftrtrackr-appearance';
+// Ordered around the color wheel (warm, green, blue to purple), then the muted ones.
 export const ACCENTS = [
-  { id: 'spinach', label: 'Spinach', sw: 'oklch(0.55 0.13 162)' },
-  { id: 'ocean', label: 'Ocean', sw: 'oklch(0.55 0.13 240)' },
-  { id: 'iris', label: 'Iris', sw: 'oklch(0.55 0.13 285)' },
   { id: 'rose', label: 'Rose', sw: 'oklch(0.58 0.15 8)' },
   { id: 'ember', label: 'Ember', sw: 'oklch(0.62 0.14 48)' },
+  { id: 'honey', label: 'Honey', sw: 'oklch(0.68 0.13 80)' },
+  { id: 'moss', label: 'Moss', sw: 'oklch(0.58 0.13 130)' },
+  { id: 'spinach', label: 'Spinach', sw: 'oklch(0.55 0.13 162)' },
+  { id: 'lagoon', label: 'Lagoon', sw: 'oklch(0.58 0.1 200)' },
+  { id: 'ocean', label: 'Ocean', sw: 'oklch(0.55 0.13 240)' },
+  { id: 'iris', label: 'Iris', sw: 'oklch(0.55 0.13 285)' },
+  { id: 'grape', label: 'Grape', sw: 'oklch(0.55 0.14 318)' },
+  { id: 'cocoa', label: 'Cocoa', sw: 'oklch(0.5 0.06 55)' },
+  { id: 'slate', label: 'Slate', sw: 'oklch(0.5 0.05 240)' },
   { id: 'graphite', label: 'Graphite', sw: 'oklch(0.45 0.015 250)' },
 ];
 const DEFAULTS = { scheme: 'system', accent: 'spinach', units: null };

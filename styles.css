@@ -51,6 +51,12 @@
 :root[data-accent="iris"] { --hue: 285; }
 :root[data-accent="rose"] { --hue: 8; }
 :root[data-accent="ember"] { --hue: 48; }
+:root[data-accent="honey"] { --hue: 80; }
+:root[data-accent="moss"] { --hue: 130; }
+:root[data-accent="lagoon"] { --hue: 200; --chroma: 0.85; }
+:root[data-accent="grape"] { --hue: 318; }
+:root[data-accent="cocoa"] { --hue: 55; --chroma: 0.45; }
+:root[data-accent="slate"] { --hue: 240; --chroma: 0.4; }
 :root[data-accent="graphite"] { --hue: 250; --chroma: 0.12; }
 
 /* Base */
