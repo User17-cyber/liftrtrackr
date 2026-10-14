@@ -28,7 +28,9 @@ const ERRORS = {
   bad_key: 'Anthropic rejected your API key. Check it in Settings.',
   no_access: 'Your API key can’t use this model. Check its permissions in the Anthropic Console, or pick another model in Settings.',
   no_model: 'Your Anthropic account doesn’t have access to this model. Pick another one in Settings.',
-  rate_limited: 'Anthropic is rate-limiting your key, or its spend limit was reached. Wait a minute, then try again.',
+  rate_limited: kind === 'claude'
+    ? 'You’ve reached your Claude usage limit for now, or sent several requests in a row. Limits reset within a few hours; meanwhile you can enter calories and macros yourself or search foods.'
+    : 'Anthropic is rate-limiting your key, or its spend limit was reached. Wait a minute, then try again.',
   offline: 'Couldn’t reach Anthropic. Check your connection; you can still search USDA foods.',
   refused: 'Claude declined to analyze this. Try a different photo or description.',
   truncated: 'Claude’s answer was cut off. Try again, or describe fewer foods at once.',
