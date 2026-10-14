@@ -2,6 +2,7 @@
 import { fdcUrl } from './usda.js';
 import { AMDR, validateProfile, estimate, macroRanges } from './metabolism.js';
 import { MEALS } from './analyze.js';
+import { findFavorite, saveFavorite, removeFavorite } from './favorites.js';
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -10,6 +11,7 @@ const num = v => (Number.isFinite(Number(v)) ? Number(v) : 0);
 const r10 = n => Math.round(n / 10) * 10;
 const MEAL_ORDER = { breakfast: 0, lunch: 1, snack: 2, dinner: 3 };
 const MACROS = [['protein', 'P', 'Protein'], ['carb', 'C', 'Carbs'], ['fat', 'F', 'Fat']];
+const STAR = '<svg viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="m12 3.5 2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z"/></svg>';
 const CHEVRON = '<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>';
 const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const parseISO = s => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); };
@@ -110,6 +112,7 @@ function sourceLink(it) {
   let url = null;
   try { const u = new URL(String(it.url || '')); if (u.protocol === 'https:' || u.protocol === 'http:') url = u; } catch { /* no link */ }
   if (it.origin === 'typed') return 'entered by you';
+  if (it.origin === 'favorite') return 'saved favorite';
   if (it.origin === 'stated') return `your numbers${url ? ` · <a href="${esc(url.href)}" target="_blank" rel="noopener">reference</a>` : ''}`;
   if (url) return `<a href="${esc(url.href)}" target="_blank" rel="noopener" title="${esc(it.desc)}">${esc(url.hostname.replace(/^www\./, ''))}</a>`;
   return it.origin === 'label' ? 'package label' : 'Claude, unverified';
@@ -131,7 +134,11 @@ function mealHtml(e) {
       ${CHEVRON}
     </button>
     <div class="meal-detail" id="${id}" ${open ? '' : 'hidden'}>
-      ${items.map(it => `<div class="md-row"><span>${esc(it.label)} <span class="muted">· ${it.grams > 0 ? `${fmt(it.grams)}&nbsp;g · ` : ''}${sourceLink(it)}</span></span><span class="num nowrap">${fmt(it.n?.kcal)} kcal</span></div>`).join('')}
+      ${items.map((it, i) => {
+        const fav = !!findFavorite(ctx.store(), it.label);
+        return `<div class="md-row"><span>${esc(it.label)}${it.servings > 0 && it.servings !== 1 ? ` × ${Number(it.servings).toLocaleString(undefined, { maximumFractionDigits: 2 })}` : ''} <span class="muted">· ${it.grams > 0 ? `${fmt(it.grams)}&nbsp;g · ` : ''}${sourceLink(it)}</span></span>
+          <span class="md-end"><span class="num nowrap">${fmt(it.n?.kcal)} kcal</span><button type="button" class="fav-btn" data-act="fav" data-i="${i}" aria-pressed="${fav}" aria-label="${esc(`${fav ? 'Remove' : 'Save'} ${it.label} ${fav ? 'from' : 'to'} favorites`)}">${STAR}</button></span></div>`;
+      }).join('')}
       <div class="md-macros">Protein ${fmt(e.totals?.protein)} g · Carbs ${fmt(e.totals?.carb)} g · Fat ${fmt(e.totals?.fat)} g</div>
       <div class="meal-tools">${confirming
         ? '<span>Delete this meal?</span><button type="button" class="link-btn danger" data-act="delete-yes">Delete</button><button type="button" class="link-btn" data-act="delete-no">Keep it</button>'
@@ -145,9 +152,13 @@ function renderMeals() {
   const entries = [...dayDoc(ctx.store(), date).entries].sort((a, b) => (MEAL_ORDER[a.meal] ?? 9) - (MEAL_ORDER[b.meal] ?? 9) || String(a.at).localeCompare(String(b.at)));
   $('meals-h').textContent = today ? 'Today’s meals' : `Meals, ${dateLong(date)}`;
   $('meals-count').textContent = entries.length ? `${entries.length} logged` : '';
+  // A redraw (say, after a star syncs) keeps focus on the same control.
+  const a = document.activeElement, mealId = a?.closest?.('#meal-list .meal')?.dataset.id;
+  const again = mealId && a.dataset.act ? `.meal[data-id="${CSS.escape(mealId)}"] [data-act="${a.dataset.act}"]${a.dataset.i ? `[data-i="${a.dataset.i}"]` : ''}` : null;
   $('meal-list').innerHTML = !ctx.store() ? '<p class="fine">Opening your log…</p>'
     : entries.length ? entries.map(mealHtml).join('')
     : `<p class="empty">Nothing logged ${today ? 'yet today' : 'on this day'}. Meals you add appear here; tap one to see its foods.</p>`;
+  if (again) document.querySelector(again)?.focus({ preventScroll: true });
 }
 
 async function onMealClick(ev) {
@@ -157,6 +168,7 @@ async function onMealClick(ev) {
   if (act === 'toggle') { openMeal = openMeal === id ? null : id; confirmDelete = null; }
   if (act === 'delete') confirmDelete = id;
   if (act === 'delete-no') confirmDelete = null;
+  if (act === 'fav') await toggleFavorite(dayDoc(ctx.store(), date).entries.find(e => e.id === id)?.items?.[Number(btn.dataset.i)]);
   if (act === 'delete-yes') {
     confirmDelete = null; openMeal = null;
     const day = dayDoc(ctx.store(), date);
@@ -167,7 +179,22 @@ async function onMealClick(ev) {
   }
   renderMeals();
   renderSummary();
-  if (act !== 'delete-yes') document.querySelector(`.meal[data-id="${CSS.escape(id)}"] [data-act="${act === 'delete' ? 'delete-no' : act === 'toggle' ? 'toggle' : 'delete'}"]`)?.focus({ preventScroll: true });
+  const again = act === 'fav' ? `fav"][data-i="${btn.dataset.i}` : act === 'delete' ? 'delete-no' : act === 'toggle' ? 'toggle' : 'delete';
+  if (act !== 'delete-yes') document.querySelector(`.meal[data-id="${CSS.escape(id)}"] [data-act="${again}"]`)?.focus({ preventScroll: true });
+}
+
+// A star on a logged food saves what was eaten (one serving's worth) as a favorite, or removes it.
+async function toggleFavorite(it) {
+  if (!it?.label) return;
+  const store = ctx.store(), fav = findFavorite(store, it.label), s = it.servings > 0 ? it.servings : 1;
+  try {
+    if (fav) { await removeFavorite(store, fav.id); ctx.toast(`Removed “${fav.label}” from favorites`); }
+    else {
+      const n = it.n || {};
+      await saveFavorite(store, { label: it.label, n: { kcal: num(n.kcal) / s, protein: num(n.protein) / s, carb: num(n.carb) / s, fat: num(n.fat) / s }, grams: num(it.grams) / s });
+      ctx.toast(`Saved “${it.label}” to favorites`);
+    }
+  } catch (e) { ctx.toast(ctx.saveError(e)); }
 }
 
 /* ---------- 14 days ---------- */

@@ -69,11 +69,18 @@
                 <button id="manual-btn" class="link-btn" type="button">Search foods</button>
                 <button id="numbers-btn" class="link-btn" type="button">Enter calories &amp; macros</button>
               </div>
+              <div id="fav-strip" class="fav-strip" hidden>
+                <span class="field-label" id="fav-strip-h">Favorites</span>
+                <div id="fav-chips" class="fav-chips" role="group" aria-labelledby="fav-strip-h"></div>
+              </div>
               <button id="analyze-btn" class="btn btn-primary flow-primary" type="button" disabled>Analyze photo</button>
             </div>
             <form id="quick" class="quick" hidden novalidate aria-labelledby="quick-h">
               <div class="quick-head"><h3 id="quick-h">Enter calories &amp; macros</h3><button type="button" class="link-btn" id="q-cancel">Cancel</button></div>
-              <div class="field"><label for="q-title">What you ate <span class="opt">(optional)</span></label><input id="q-title" type="text" maxlength="80" placeholder="Protein shake" autocomplete="off" autocapitalize="sentences" enterkeyhint="next"></div>
+              <div class="quick-pair quick-pair-name">
+                <div class="field"><label for="q-title">What you ate <span class="opt">(optional)</span></label><input id="q-title" type="text" list="fav-names" maxlength="80" placeholder="Protein shake" autocomplete="off" autocapitalize="sentences" enterkeyhint="next"><datalist id="fav-names"></datalist></div>
+                <div class="field"><label for="q-servings">Servings</label><input id="q-servings" type="number" inputmode="decimal" min="0.25" max="50" step="any" placeholder="1" enterkeyhint="next"></div>
+              </div>
               <div class="quick-pair">
                 <div class="field"><label for="q-kcal">Calories</label><div class="field-row"><input id="q-kcal" type="number" inputmode="decimal" min="0" max="20000" step="any" enterkeyhint="next"><span class="u">kcal</span></div></div>
                 <div class="field"><label for="q-meal">Meal</label><select id="q-meal"></select></div>
@@ -87,6 +94,10 @@
                   <div class="field"><label for="q-fat">Fat</label><div class="field-row"><input id="q-fat" type="number" inputmode="decimal" min="0" max="2000" step="any" enterkeyhint="done"><span class="u">g</span></div></div>
                 </div>
               </fieldset>
+              <div class="quick-fav">
+                <label class="switch-row" for="q-fav"><span><b id="q-fav-label">Save to favorites</b><span class="hint" id="q-fav-hint"></span></span><input type="checkbox" id="q-fav" role="switch"></label>
+                <button type="button" class="link-btn danger" id="q-fav-remove" hidden>Remove from favorites</button>
+              </div>
               <button type="submit" class="btn btn-primary btn-block" id="q-log">Add to today</button>
               <p id="q-error" class="form-error" role="alert" hidden></p>
             </form>

@@ -182,7 +182,7 @@ async function boot() {
   try {
     const n = await loadUsda();
     $('food-count').textContent = `${n.toLocaleString()} foods are bundled with this app.`;
-    analyzer = initAnalyzer({ onLog, dateLabel, toast, saveError });
+    analyzer = initAnalyzer({ onLog, dateLabel, toast, saveError, store: () => state.store });
   } catch (e) {
     $('analyze-error-text').textContent = `${e.message || 'The USDA food table did not load.'} Reload to try again.`;
     $('analyze-error').hidden = false;

@@ -24,8 +24,9 @@ function cloudStore(db, uid, onChange) {
   // All weigh-ins live in one document: ~30 bytes each, so decades of daily entries fit.
   const weightsRef = db.doc(`${base}/weights`);
   const prefsRef = db.doc(`${base}/prefs`);
+  const favoritesRef = db.doc(`${base}/favorites`);
   const liftsCol = db.doc(`${base}/training`).collection('sessions');
-  const state = { profile: null, days: {}, weights: null, prefs: null, lifts: {}, profileLoaded: false };
+  const state = { profile: null, days: {}, weights: null, prefs: null, favorites: null, lifts: {}, profileLoaded: false };
   const queues = new Map();
   // One write at a time per document.
   const enqueue = (key, fn) => {
@@ -42,6 +43,7 @@ function cloudStore(db, uid, onChange) {
   }, fail);
 
   prefsRef.onSnapshot(s => { state.prefs = s.exists ? s.data() : null; onChange({}); }, fail);
+  favoritesRef.onSnapshot(s => { state.favorites = s.exists ? s.data() : null; onChange({}); }, fail);
 
   weightsRef.onSnapshot(s => {
     state.weights = s.exists ? s.data() : null;
@@ -73,6 +75,7 @@ function cloudStore(db, uid, onChange) {
     get weights() { return state.weights; },
     get lifts() { return state.lifts; },
     get prefs() { return state.prefs; },
+    get favorites() { return state.favorites; },
     async ensureDay(date) {
       if (state.days[date]) return;
       const s = await daysCol.doc(date).get();
@@ -105,6 +108,12 @@ function cloudStore(db, uid, onChange) {
       onChange({});
       return enqueue('prefs', () => prefsRef.set(p)).catch(e => { state.prefs = prev; onChange({}); throw e; });
     },
+    saveFavorites(doc) {
+      const prev = state.favorites;
+      state.favorites = doc;
+      onChange({});
+      return enqueue('favorites', () => favoritesRef.set(doc)).catch(e => { state.favorites = prev; onChange({}); throw e; });
+    },
     saveWeights(doc) {
       const prev = state.weights;
       state.weights = doc;
@@ -130,10 +139,10 @@ function cloudStore(db, uid, onChange) {
   };
 }
 
-const backup = s => ({ app: 'plate-ledger', version: 1, exportedAt: new Date().toISOString(), profile: s.profile || null, weights: s.weights || null, prefs: s.prefs || null, days: s.days || {}, lifts: s.lifts || {} });
+const backup = s => ({ app: 'plate-ledger', version: 1, exportedAt: new Date().toISOString(), profile: s.profile || null, weights: s.weights || null, prefs: s.prefs || null, favorites: s.favorites || null, days: s.days || {}, lifts: s.lifts || {} });
 
 function localStore(onChange) {
-  let saved = { profile: null, days: {}, weights: null, prefs: null, lifts: {} };
+  let saved = { profile: null, days: {}, weights: null, prefs: null, favorites: null, lifts: {} };
   try { saved = JSON.parse(localStorage.getItem(LS_KEY)) || saved; } catch { /* storage blocked */ }
   const persist = () => {
     try { localStorage.setItem(LS_KEY, JSON.stringify(saved)); return true; } catch { return false; }
@@ -147,6 +156,7 @@ function localStore(onChange) {
     get weights() { return saved.weights; },
     get lifts() { return (saved.lifts ||= {}); },
     get prefs() { return saved.prefs; },
+    get favorites() { return saved.favorites; },
     async ensureDay() {},
     async saveDay(date, doc) {
       if (doc.entries.length) saved.days[date] = doc; else delete saved.days[date];
@@ -171,6 +181,11 @@ function localStore(onChange) {
     },
     async saveWeights(doc) {
       saved.weights = doc;
+      onChange({});
+      if (!persist()) throw { code: 'local_full', message: 'This browser refused to save.' };
+    },
+    async saveFavorites(doc) {
+      saved.favorites = doc;
       onChange({});
       if (!persist()) throw { code: 'local_full', message: 'This browser refused to save.' };
     },
