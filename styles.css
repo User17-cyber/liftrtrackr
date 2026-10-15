@@ -189,6 +189,7 @@ details.disclose[open] > summary svg { transform: rotate(90deg); }
 .mval small { color: var(--muted); font-weight: 500; font-size: 14px; }
 .mbar { grid-column: 1 / -1; position: relative; height: 8px; border-radius: 4px; background: var(--fill); overflow: hidden; }
 .mbar .band { position: absolute; top: 0; bottom: 0; opacity: 0.25; }
+.mbar .goal { position: absolute; top: 0; bottom: 0; z-index: 1; width: 2px; margin-left: -1px; background: var(--ink); opacity: 0.6; }
 .mbar .fill { position: absolute; inset: 0; border-radius: 4px; transform-origin: left center; transition: transform .4s var(--ease); }
 .mrange { grid-column: 1 / -1; color: var(--muted); font-size: 13px; }
 

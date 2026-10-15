@@ -1,6 +1,7 @@
 // Calories tab: the day's ring and macros, the meal list, the 14-day chart and the maintenance card.
 import { fdcUrl } from './usda.js';
-import { AMDR, validateProfile, estimate, macroRanges } from './metabolism.js';
+import { AMDR, macroRanges } from './metabolism.js';
+import { targetsFor } from './targets.js';
 import { MEALS } from './analyze.js';
 import { findFavorite, saveFavorite, removeFavorite } from './favorites.js';
 
@@ -28,12 +29,6 @@ export function dayTotals(day) {
   const t = { kcal: 0, protein: 0, carb: 0, fat: 0 };
   for (const e of day.entries) for (const k in t) t[k] += num(e.totals?.[k]);
   return t;
-}
-export function estimateFor(store, units) {
-  const p = store?.profile;
-  if (!p) return null;
-  const v = validateProfile({ ...p, units });
-  return v.ok ? estimate(v.profile) : null;
 }
 
 export function initCalories(c) {
@@ -65,8 +60,8 @@ export function render() {
 function renderSummary() {
   const date = ctx.date(), today = date === ctx.today();
   const t = dayTotals(dayDoc(ctx.store(), date));
-  const est = estimateFor(ctx.store(), ctx.units());
-  const target = est ? r10(est.target) : null, maint = est ? r10(est.maintenance) : null;
+  const tg = targetsFor(ctx.store(), ctx.units()), est = tg.est;
+  const target = tg.kcal, maint = est ? r10(est.maintenance) : null;
   const R = 56, C = 2 * Math.PI * R;
   const frac = target ? Math.min(1, t.kcal / target) : t.kcal > 0 ? 1 : 0;
   const left = target ? target - t.kcal : null;
@@ -74,22 +69,29 @@ function renderSummary() {
     ? `<b>${fmt(Math.abs(left))}</b><span>${left >= 0 ? 'kcal left' : 'kcal over'}</span>`
     : `<b>${fmt(t.kcal)}</b><span>kcal eaten</span>`;
   const kv = [['Eaten', `${fmt(t.kcal)}`]];
-  if (target) kv.push(['Target', fmt(target)]);
+  if (target) kv.push([tg.source === 'estimate' ? 'Target' : 'Your target', fmt(target)]);
   if (maint && maint !== target) kv.push(['Maintenance', fmt(maint)]);
   const ref = target || 2000, ranges = macroRanges(ref);
   const macros = MACROS.map(([k, key, label]) => {
-    const g = t[k], r = ranges[k], a = AMDR[k];
-    const scale = Math.max(r.max * 1.1, g * 1.05);
+    const g = t[k], r = ranges[k], a = AMDR[k], goal = tg.macros[k];
     const share = t.kcal ? Math.round((g * a.kcalPerG / t.kcal) * 100) : 0;
+    // Your own goal shows as a mark on the bar; otherwise the recommended range is shaded.
+    const scale = goal != null ? Math.max(goal * 1.15, g * 1.05, 1) : Math.max(r.max * 1.1, g * 1.05);
+    const mark = goal != null
+      ? `<div class="goal" style="left:${(goal / scale) * 100}%"></div>`
+      : `<div class="band" style="left:${(r.min / scale) * 100}%;width:${((r.max - r.min) / scale) * 100}%;background:var(--${k})"></div>`;
+    const note = goal != null
+      ? `Goal ${fmt(goal)} g${g < goal ? ` · ${fmt(goal - g)} g to go` : g > goal ? ` · ${fmt(g - goal)} g over` : ' · reached'}`
+      : `Recommended ${fmt(r.min)}–${fmt(r.max)} g${k === 'protein' && est ? `, at least ${fmt(est.proteinRda)} g` : ''}`;
     return `<div class="macro">
       <span class="mkey" style="background:var(--${k})" aria-hidden="true">${key}</span>
       <span class="mname">${label}</span>
       <span class="mval">${fmt(g)} g <small>${share}%</small></span>
-      <div class="mbar" role="img" aria-label="${label}: ${fmt(g)} g eaten, recommended ${fmt(r.min)} to ${fmt(r.max)} g">
-        <div class="band" style="left:${(r.min / scale) * 100}%;width:${((r.max - r.min) / scale) * 100}%;background:var(--${k})"></div>
+      <div class="mbar" role="img" aria-label="${label}: ${fmt(g)} g eaten, ${goal != null ? `goal ${fmt(goal)} g` : `recommended ${fmt(r.min)} to ${fmt(r.max)} g`}">
+        ${mark}
         <div class="fill" style="transform:scaleX(${Math.min(1, g / scale)});background:var(--${k})"></div>
       </div>
-      <span class="mrange">Recommended ${fmt(r.min)}–${fmt(r.max)} g${k === 'protein' && est ? `, at least ${fmt(est.proteinRda)} g` : ''}</span>
+      <span class="mrange">${note}</span>
     </div>`;
   }).join('');
   $('summary').innerHTML = `<h2 class="visually-hidden">${today ? 'Today' : esc(dateLong(date))}</h2>
@@ -99,7 +101,7 @@ function renderSummary() {
         <div class="ring-center">${center}</div>
       </div>
       <dl class="kv">${kv.map(([k, v]) => `<div><dt>${k}</dt><dd>${v}</dd></div>`).join('')}
-        ${target ? '' : '<div><dt><button type="button" class="link-btn" data-goto="settings">Add your details</button></dt><dd></dd></div>'}</dl>
+        ${target ? '' : '<div><dt><button type="button" class="link-btn" data-goto="settings" data-anchor="targets">Set a target</button></dt><dd></dd></div>'}</dl>
     </div>
     <div class="macros">${macros}</div>`;
 }
@@ -206,7 +208,7 @@ function renderHistory() {
   const pad = { l: 34, r: 4, t: 14, b: 36 };
   const days = Array.from({ length: 14 }, (_, i) => addDays(ctx.today(), i - 13));
   const vals = days.map(d => dayTotals(dayDoc(ctx.store(), d)).kcal);
-  const est = estimateFor(ctx.store(), ctx.units()), target = est ? r10(est.target) : null;
+  const target = targetsFor(ctx.store(), ctx.units()).kcal;
   const top = Math.max(target || 0, ...vals, 1000);
   const step = top > 4000 ? 1000 : 500;
   const max = Math.ceil((top * 1.08) / step) * step;
@@ -231,7 +233,7 @@ function renderHistory() {
 
 function renderTdee() {
   const out = $('tdee-out');
-  const est = estimateFor(ctx.store(), ctx.units());
+  const tg = targetsFor(ctx.store(), ctx.units()), est = tg.est;
   if (!est) {
     out.innerHTML = `<p class="empty">Add your age, height, weight and activity in Settings to estimate the calories you burn.</p>
       <button type="button" class="btn btn-tinted btn-sm" style="margin-top:12px" data-goto="settings">Add your details</button>`;
@@ -245,7 +247,8 @@ function renderTdee() {
     <div class="big-figure"><b>${fmt(maint)}</b><span class="muted">kcal a day, estimated</span></div>
     <p class="fine">The equations range from ${fmt(r10(est.low))} to ${fmt(r10(est.high))} kcal. Any one person can differ by about 10%.</p>
     ${m?.status === 'ok' ? `<div class="pill-box">Measured from your meals and weigh-ins: <b>${fmt(r10(m.kcal))} kcal</b> over ${m.span} days.</div>` : ''}
-    <div class="pill-box">${est.goal.delta === 0 ? `Daily target: <b>${fmt(target)} kcal</b>, the same as maintenance.`
+    <div class="pill-box">${tg.source !== 'estimate' ? `Your own target: <b>${fmt(tg.kcal)} kcal</b>, ${fmt(Math.abs(tg.kcal - maint))} ${tg.kcal >= maint ? 'above' : 'below'} estimated maintenance. <button type="button" class="link-btn" data-goto="settings" data-anchor="targets">Change</button>`
+      : est.goal.delta === 0 ? `Daily target: <b>${fmt(target)} kcal</b>, the same as maintenance.`
       : `Target to ${esc(goal)}: <b>${fmt(target)} kcal</b>.${est.floored ? ' Held at the usual minimum for unsupervised dieting.' : ''}`}</div>
     <details class="disclose">
       <summary><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>How this is calculated</summary>

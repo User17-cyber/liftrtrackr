@@ -7,6 +7,7 @@ import { initWeight } from './weight.js';
 import { initLifting } from './lifting.js';
 import { initCalories, dayDoc, dayTotals } from './calories.js';
 import { initProfile } from './profile.js';
+import { initTargets } from './targets.js';
 import { initAppearance, currentPrefs, render as renderAppearance } from './appearance.js';
 import { openStore, initPlatformSettings, kind } from './platform.js';
 
@@ -19,7 +20,7 @@ const addDays = (s, n) => { const d = parseISO(s); d.setDate(d.getDate() + n); r
 const todayISO = () => iso(new Date());
 
 const state = { date: todayISO(), store: null, tab: initialTab() };
-let analyzer = null, weight = null, lifting = null, calories = null, profile = null, toastTimer = null;
+let analyzer = null, weight = null, lifting = null, calories = null, profile = null, targets = null, toastTimer = null;
 let renderQueued = false, pendingRender = false;
 
 function initialTab() {
@@ -63,7 +64,7 @@ function renderActive() {
   if (state.tab === 'calories') calories?.render();
   else if (state.tab === 'weight') weight?.render();
   else if (state.tab === 'lifting') lifting?.render();
-  else profile?.render();
+  else { profile?.render(); targets?.render(); }
   analyzer?.refresh();
 }
 
@@ -153,6 +154,7 @@ async function boot() {
   const base = { store, toast, saveError, units, today: todayISO };
   initAppearance({ ...base, onUnits: () => { profile?.onUnits(); renderActive(); } });
   profile = initProfile(base);
+  targets = initTargets(base);
   weight = initWeight({ ...base, onTrend: syncProfileWeight, intakeFor: d => dayTotals(dayDoc(state.store, d)).kcal });
   lifting = initLifting({ ...base, date: () => state.date });
   calories = initCalories({ ...base, date: () => state.date, setDate, measured: () => weight.measured(), goTo: setTab });
@@ -162,7 +164,7 @@ async function boot() {
     const tab = e.target.closest('.tabbar [data-tab]');
     if (tab) return setTab(tab.dataset.tab);
     const go = e.target.closest('[data-goto]');
-    if (go) setTab(go.dataset.goto, go.dataset.goto === 'settings' ? 'profile' : null);
+    if (go) setTab(go.dataset.goto, go.dataset.goto === 'settings' ? go.dataset.anchor || 'profile' : null);
   });
   $('day-prev').addEventListener('click', () => setDate(addDays(state.date, -1)));
   $('day-next').addEventListener('click', () => setDate(addDays(state.date, 1)));

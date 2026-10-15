@@ -1,11 +1,11 @@
 // Offline support. The app shell and the USDA table are cached on install; same-origin requests
 // are served from cache and refreshed in the background, so a new deploy shows on the next launch.
 // Calls to api.anthropic.com always go to the network.
-const CACHE = 'plate-ledger-v9';
+const CACHE = 'plate-ledger-v10';
 const SHELL = [
   './', 'index.html', 'styles.css', 'manifest.webmanifest', 'boot-theme.js',
   'app.js', 'analyze.js', 'ai.js', 'platform.js', 'device-settings.js', 'store.js', 'usda.js', 'metabolism.js',
-  'calories.js', 'weight.js', 'lifting.js', 'profile.js', 'appearance.js', 'charts.js', 'food-ai.js', 'quick-add.js', 'favorites.js',
+  'calories.js', 'weight.js', 'lifting.js', 'profile.js', 'appearance.js', 'charts.js', 'food-ai.js', 'quick-add.js', 'favorites.js', 'targets.js',
   'vendor/anthropic-sdk.js', 'usda-foods.json',
   'icons/icon.svg', 'icons/apple-touch-icon.png', 'icons/icon-192.png', 'icons/icon-512.png',
 ];

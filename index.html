@@ -244,6 +244,24 @@
               <button class="btn btn-primary" type="submit">Save details</button>
             </form>
           </div>
+          <div class="card" id="targets">
+            <div class="card-head"><h2>Daily targets</h2></div>
+            <p class="fine" style="margin-bottom:12px">Set your own calorie and macro goals. Leave a box blank to use the estimate from your details, or the recommended range for that macro.</p>
+            <form id="targets-form" class="settings-form" novalidate>
+              <div class="field"><label for="tg-kcal">Calories</label><div class="field-row"><input id="tg-kcal" type="number" inputmode="decimal" min="500" max="10000" step="any" enterkeyhint="next"><span class="u">kcal</span></div><div class="hint" id="tg-kcal-hint"></div></div>
+              <fieldset class="quick-macros">
+                <legend>Macros <span class="opt">(grams a day)</span></legend>
+                <div class="quick-row">
+                  <div class="field"><label for="tg-protein">Protein</label><div class="field-row"><input id="tg-protein" type="number" inputmode="decimal" min="0" max="1000" step="any" enterkeyhint="next"><span class="u">g</span></div></div>
+                  <div class="field"><label for="tg-carb">Carbs</label><div class="field-row"><input id="tg-carb" type="number" inputmode="decimal" min="0" max="1500" step="any" enterkeyhint="next"><span class="u">g</span></div></div>
+                  <div class="field"><label for="tg-fat">Fat</label><div class="field-row"><input id="tg-fat" type="number" inputmode="decimal" min="0" max="600" step="any" enterkeyhint="done"><span class="u">g</span></div></div>
+                </div>
+              </fieldset>
+              <p id="tg-hint" class="fine" aria-live="polite" hidden></p>
+              <p id="tg-error" class="form-error" role="alert" hidden></p>
+              <div class="backup-actions"><button class="btn btn-primary" type="submit">Save targets</button><button type="button" class="btn btn-plain" id="tg-clear" hidden>Use estimates</button></div>
+            </form>
+          </div>
         </div>
         <div class="stack">
           <div class="card" id="ai-settings"></div>
