@@ -1,4 +1,4 @@
-// Photo → foods. Claude identifies each food and searches the bundled USDA table with a page tool;
+// Photo → foods. Claude identifies each food and searches the bundled food tables with a page tool;
 // the page computes every nutrient value. platform.js decides how Claude is reached: the viewer's own
 // Claude plan on claude.ai, or the API key saved on this device in the installed app.
 import { getFood, search, getPortions, nutrientsFor, sumNutrients, datasetName } from './usda.js';
@@ -31,7 +31,7 @@ const ERRORS = {
   rate_limited: kind === 'claude'
     ? 'You’ve reached your Claude usage limit for now, or sent several requests in a row. Limits reset within a few hours; meanwhile you can enter calories and macros yourself or search foods.'
     : 'Anthropic is rate-limiting your key, or its spend limit was reached. Wait a minute, then try again.',
-  offline: 'Couldn’t reach Anthropic. Check your connection; you can still search USDA foods.',
+  offline: 'Couldn’t reach Anthropic. Check your connection; you can still search foods.',
   refused: 'Claude declined to analyze this. Try a different photo or description.',
   truncated: 'Claude’s answer was cut off. Try again, or describe fewer foods at once.',
   incomplete: 'Claude didn’t finish matching foods. Try again, or add details in the text box.',
@@ -258,7 +258,7 @@ function itemHtml(it, i) {
       <input type="text" class="item-name" value="${esc(it.label)}" maxlength="80" aria-label="Food name">
       <button type="button" class="remove-btn" aria-label="Remove ${esc(it.label)}">${ICON_X}</button>
     </div>
-    <div class="item-match"><span class="src">${esc(src.chip)}</span>${src.href ? `<a href="${esc(src.href)}" target="_blank" rel="noopener">${esc(src.text)}</a>` : esc(src.text)} · <button type="button" class="link-btn change">${it.custom ? 'Use USDA' : 'Change'}</button></div>
+    <div class="item-match"><span class="src">${esc(src.chip)}</span>${src.href ? `<a href="${esc(src.href)}" target="_blank" rel="noopener">${esc(src.text)}</a>` : esc(src.text)} · <button type="button" class="link-btn change">${it.custom ? 'Use a database match' : 'Change'}</button></div>
     <div class="item-controls">
       <div class="stepper">
         <button type="button" class="step" data-dir="-1" aria-label="Less ${esc(it.label)}">−</button>
@@ -266,7 +266,7 @@ function itemHtml(it, i) {
         <span class="u" aria-hidden="true">g</span>
         <button type="button" class="step" data-dir="1" aria-label="More ${esc(it.label)}">+</button>
       </div>
-      ${portions.length ? `<select class="portion" aria-label="Set the weight from a portion"><option value="">${it.custom ? 'Servings…' : 'USDA portions…'}</option>${portions.map(p => `<option value="${p.g}">${esc(p.label)} · ${fmt(p.g, p.g < 10 ? 1 : 0)} g</option>`).join('')}</select>` : ''}
+      ${portions.length ? `<select class="portion" aria-label="Set the weight from a portion"><option value="">${it.custom ? 'Servings…' : 'Portions…'}</option>${portions.map(p => `<option value="${p.g}">${esc(p.label)} · ${fmt(p.g, p.g < 10 ? 1 : 0)} g</option>`).join('')}</select>` : ''}
     </div>
     <div class="item-meta"><label class="item-kcal"><input type="number" class="kcal-in" inputmode="numeric" min="0" step="1" value="${Math.round(n.kcal)}" aria-label="Calories for ${esc(it.label)}">kcal</label>${conf}<span class="macros-line">${macroLine(n)}</span>${it.basis ? `<span>${esc(it.basis)}</span>` : ''}</div>
   </div>`;
@@ -310,7 +310,7 @@ function renderResult(reveal = false) {
         <div class="items" id="r-items">${renderItems()}</div>
         <button type="button" class="btn btn-tinted btn-sm add-food" id="r-add">+ Add a food</button>
         <div id="r-add-finder"></div>
-        ${result.notes || result.usd ? `<p class="ai-notes">${esc(result.notes)}${result.webUnavailable ? ' Web search is turned off for your Anthropic organization, so brand-name foods came from labels or USDA.' : ''}${result.usd ? ` Analysis cost about ${result.usd < 0.01 ? 'under 1¢' : `${Math.round(result.usd * 100)}¢`} on your Anthropic account.` : ''}</p>` : ''}
+        ${result.notes || result.usd ? `<p class="ai-notes">${esc(result.notes)}${result.webUnavailable ? ' Web search is turned off for your Anthropic organization, so brand-name foods came from labels or the food databases.' : ''}${result.usd ? ` Analysis cost about ${result.usd < 0.01 ? 'under 1¢' : `${Math.round(result.usd * 100)}¢`} on your Anthropic account.` : ''}</p>` : ''}
       </div>
       <div id="r-totals">${totalsHtml()}</div>
       <div class="result-actions">
@@ -349,13 +349,14 @@ function refreshRow(row) {
 function finderList(q) {
   if (!q.trim()) return '<li><span class="muted">Type a food or a brand, such as “grilled salmon” or “Chobani vanilla yogurt”.</span></li>';
   const hits = search(q, 12);
-  // Brand names and restaurant items are rarely in USDA's tables: offer a lookup either way.
+  // Brand names and restaurant items are rarely in the food tables: offer a lookup either way.
   const lookup = `<li><button type="button" class="lookup-btn" data-lookup="1"><span>${canSearchWeb() ? 'Look up' : 'Ask Claude for'} “${esc(q.trim().slice(0, 60))}”${canSearchWeb() ? ' online' : ''}</span><span class="k">${canSearchWeb() ? 'web' : kind === 'claude' ? 'unverified' : 'no web'}</span></button></li>`;
-  const rows = hits.map(f => `<li><button type="button" data-fdc="${f.id}"><span>${esc(f.desc)} <span class="src">${datasetName(f)}</span></span><span class="k">${fmt(f.per100.kcal)} kcal/100 g</span></button></li>`).join('');
-  return hits.length ? rows + lookup : `<li><span class="muted">No USDA matches.</span></li>${lookup}`;
+  const rows = hits.map(f => `<li><button type="button" data-fdc="${esc(f.id)}"><span>${esc(f.desc)} <span class="src">${esc(datasetName(f))}</span></span><span class="k">${fmt(f.per100.kcal)} kcal/100 g</span></button></li>`).join('');
+  return hits.length ? rows + lookup : `<li><span class="muted">No matches in the food databases.</span></li>${lookup}`;
 }
 
-// A food the person typed that USDA may not carry: ask Claude (with web search in the installed app).
+// A food the person typed that the tables may not carry: ask Claude (with USDA Branded Foods and web
+// search in the installed app).
 async function lookupFood(btn, row) {
   const q = btn.closest('.finder').querySelector('.finder-q').value.trim().slice(0, 120);
   const li = btn.closest('li');
@@ -377,13 +378,13 @@ async function lookupFood(btn, row) {
     refreshItems();
   } catch (e) {
     if (!li.isConnected) return;
-    li.innerHTML = `<span class="muted">${esc(e?.code === 'not_found' ? 'Couldn’t find reliable nutrition facts for that. Try the exact product name, or pick a USDA match.' : ERRORS[e?.code] || 'The lookup failed. Try again.')}</span>`;
+    li.innerHTML = `<span class="muted">${esc(e?.code === 'not_found' ? 'Couldn’t find reliable nutrition facts for that. Try the exact product name, or pick a database match.' : ERRORS[e?.code] || 'The lookup failed. Try again.')}</span>`;
   }
 }
 
 function openFinder(slot, q) {
   if (!slot) return;
-  slot.innerHTML = `<div class="finder"><input type="search" class="finder-q" value="${esc(q)}" placeholder="Search USDA foods" aria-label="Search USDA foods" enterkeyhint="search"><ul class="finder-list">${finderList(q)}</ul></div>`;
+  slot.innerHTML = `<div class="finder"><input type="search" class="finder-q" value="${esc(q)}" placeholder="Search foods" aria-label="Search foods" enterkeyhint="search"><ul class="finder-list">${finderList(q)}</ul></div>`;
   slot.querySelector('.finder-q').focus({ preventScroll: true });
 }
 
@@ -444,7 +445,7 @@ function wireResult() {
         result.items[row.dataset.i] = { ...result.items[row.dataset.i], fdcId: food.id, custom: null, confidence: null, basis: '' };
       } else {
         const p = getPortions(food.id).find(x => x.label.startsWith('typical')) || getPortions(food.id)[0];
-        result.items.push({ label: food.desc.slice(0, 80), fdcId: food.id, grams: clampG(p?.g || 100), basis: p ? `Started at ${p.label.startsWith('typical') ? 'USDA’s typical serving' : `USDA portion: ${p.label}`}` : 'Started at 100 g', confidence: null });
+        result.items.push({ label: food.desc.slice(0, 80), fdcId: food.id, grams: clampG(p?.g || 100), basis: p ? `Started at ${p.label.startsWith('typical') ? 'the typical serving' : `the portion ${p.label}`}` : 'Started at 100 g', confidence: null });
         $('r-add-finder').innerHTML = '';
       }
       refreshItems();
@@ -466,7 +467,7 @@ async function logResult(btn) {
       return { label: (it.label || desc).trim().slice(0, 80), fdcId: null, origin: c.origin, url: c.url, desc, grams: it.grams, n: roundN(customNutrients(c, it.grams)) };
     }
     const f = getFood(it.fdcId);
-    return { label: (it.label || f.desc).trim().slice(0, 80), fdcId: f.id, origin: 'usda', desc: f.desc, src: f.src, grams: it.grams, n: roundN(nutrientsFor(f, it.grams)) };
+    return { label: (it.label || f.desc).trim().slice(0, 80), fdcId: f.id, origin: 'database', desc: f.desc, src: f.src, grams: it.grams, n: roundN(nutrientsFor(f, it.grams)) };
   });
   const totals = roundN(sumNutrients(items.map(i => i.n)));
   const entry = {

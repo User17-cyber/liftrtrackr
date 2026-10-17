@@ -18,7 +18,7 @@ export async function analyzeMeal({ buildPrompt, imageBlob, search, signal }) {
   const useTools = !!limits?.tools;
   const options = { signal };
   if (imageBlob) options.images = [imageBlob];
-  if (useTools) options.tools = [{ name: 'search_usda', description: search.description, inputSchema: search.inputSchema, execute: search.execute }];
+  if (useTools) options.tools = [{ name: search.name, description: search.description, inputSchema: search.inputSchema, execute: search.execute }];
   const reply = await sample.json(buildPrompt({ tools: useTools, web: false, submit: false }), options);
   return { reply };
 }
@@ -28,7 +28,7 @@ const APP_URL = 'https://user17-cyber.github.io/liftrtrackr/';
 export function initPlatformSettings(ctx) {
   document.getElementById('ai-settings').innerHTML = `<div class="card-head"><h2>Photo analysis</h2></div>
     <p class="fine">Runs on the Claude plan of whoever is using this page, never the page owner's. The first analysis asks you to allow it. Your meals, weigh-ins, lifting and settings are private to you and follow you to any device where you're signed in.</p>
-    <p class="fine" style="margin-top:10px">Brand-name foods: pages on claude.ai can't search the web, so Claude reads the Nutrition Facts label when it's visible in your photo, and otherwise uses what it knows of the published label, marked as unverified. The installed app can search the web.</p>`;
+    <p class="fine" style="margin-top:10px">Brand-name foods: pages on claude.ai can't reach other sites, so Claude reads the Nutrition Facts label when it's visible in your photo, and otherwise uses what it knows of the published label, marked as unverified. The installed app also checks USDA's Branded Foods labels and can search the web.</p>`;
   const card = document.getElementById('backup-card');
   card.hidden = false;
   card.innerHTML = `<div class="card-head"><h2>Move to the installed app</h2></div>

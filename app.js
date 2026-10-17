@@ -1,7 +1,7 @@
 // App shell: tabs, the shared date, the bottom dock, and render scheduling. Only the visible tab is
 // rendered, and store updates that arrive while a field has focus wait until it loses focus, so the
 // page never shifts under the person typing.
-import { loadUsda } from './usda.js';
+import { loadFoods } from './usda.js';
 import { initAnalyzer } from './analyze.js';
 import { initWeight } from './weight.js';
 import { initLifting } from './lifting.js';
@@ -182,11 +182,11 @@ async function boot() {
   setTab(state.tab);
   const storeP = openStore(onStoreChange);
   try {
-    const n = await loadUsda();
+    const n = await loadFoods();
     $('food-count').textContent = `${n.toLocaleString()} foods are bundled with this app.`;
     analyzer = initAnalyzer({ onLog, dateLabel, toast, saveError, store: () => state.store });
   } catch (e) {
-    $('analyze-error-text').textContent = `${e.message || 'The USDA food table did not load.'} Reload to try again.`;
+    $('analyze-error-text').textContent = `${e.message || 'The food tables did not load.'} Reload to try again.`;
     $('analyze-error').hidden = false;
     $('capture').hidden = true;
   }

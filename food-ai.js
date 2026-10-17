@@ -1,8 +1,9 @@
-// What Claude is asked, and how its answer becomes loggable items. Generic foods resolve to a USDA
-// entry (fdcId). Foods USDA lacks, such as brands and restaurant items, carry their own per-100 g
-// values plus where they came from: a web page (cited), the package label in the photo, or Claude's
-// knowledge of the published label (marked unverified).
-import { getFood, search, getPortions, datasetName, fdcUrl } from './usda.js';
+// What Claude is asked, and how its answer becomes loggable items. Foods resolve to an entry in one of
+// the food composition databases (food_id): the bundled USDA, Canadian, UK, French and Australian tables,
+// or, in the installed app, USDA Branded Foods looked up live. Foods none of them carry, such as most
+// restaurant items, carry their own per-100 g values plus where they came from: a web page (cited), the
+// package label in the photo, or Claude's knowledge of the published label (marked unverified).
+import { getFood, search, getPortions, datasetName, foodUrl, REGIONS } from './usda.js';
 
 const clampG = g => Math.min(3000, Math.max(1, Math.round(g)));
 const ORIGIN_CHIP = { web: 'Web', label: 'Label', knowledge: 'Claude', stated: 'You' };
@@ -10,7 +11,7 @@ const numOrNull = v => (v != null && v !== '' && Number.isFinite(Number(v)) && N
 
 /* ---------- prompts ---------- */
 
-const ITEM_SHAPE = `{"label": string, "source": "usda" | "web" | "label" | "knowledge", "fdcId": integer or null, "query": string, "brand": string or null,
+const ITEM_SHAPE = `{"label": string, "source": "database" | "web" | "label" | "knowledge", "food_id": string or null, "query": string, "brand": string or null,
   "per_serving": null or {"serving_label": string, "serving_g": number, "kcal": number, "protein_g": number, "carbs_g": number, "fat_g": number, "fiber_g": number or null, "sugar_g": number or null, "sodium_mg": number or null, "satfat_g": number or null},
   "source_url": string or null, "source_title": string or null,
   "stated": null or {"kcal": number or null, "protein_g": number or null, "carbs_g": number or null, "fat_g": number or null},
@@ -28,19 +29,20 @@ const READ_FIRST = [
   'Set "stated" to null for items where they gave no numbers.',
 ].join('\n');
 
-function sourceRules({ tools, web }) {
+function sourceRules({ tools, web, branded }) {
   return [
     tools
-      ? '- Generic foods: call search_usda with a short plain query such as "chicken thigh roasted" or "rice white cooked" (several at once is fine; retry other wording once if results are poor). FNDDS entries describe foods as eaten; SR Legacy entries are single ingredients. Match form and cooking method. Use source "usda" with that fdcId.'
-      : '- Generic foods: use source "usda", fdcId null, and a short USDA-style query such as "chicken thigh roasted".',
-    '- Branded, packaged or restaurant foods (a brand is visible or named), and foods USDA has no reasonable match for:',
+      ? '- Generic foods and dishes: call search_foods with a short plain query such as "chicken thigh roasted" or "rice white cooked" (several at once is fine; retry other wording once if results are poor). It searches USDA FoodData Central (FNDDS entries describe foods as eaten; SR Legacy and Foundation entries are single ingredients) plus the Canadian, UK, French and Australian national food tables, which carry regional foods and dishes USDA lacks (pass database "uk", "canada", "france" or "australia" to search one). Match form and cooking method. Use source "database" with that result\'s id as food_id.'
+      : '- Generic foods and dishes: use source "database", food_id null, and a short plain query such as "chicken thigh roasted".',
+    '- Branded, packaged or restaurant foods (a brand is visible or named), and foods no database search matches reasonably:',
     '  * If the package\'s Nutrition Facts label is readable in the photo, read the values from it (source "label").',
+    branded ? '  * Otherwise, for US packaged products, call search_branded with the brand and product name: it returns manufacturer-submitted labels from USDA Branded Foods. Use source "database" with that result\'s id as food_id when one matches the product.' : '',
     web
       ? '  * Otherwise use web_search to find the official nutrition facts: the brand\'s or restaurant\'s own site first, then reputable nutrition databases. Use web_fetch to read a page when snippets lack the numbers. Use source "web" and give source_url and source_title for the page the numbers came from.'
-      : '  * Otherwise, if you reliably know the product\'s published label, use it (source "knowledge"; confidence "low" unless certain). If you don\'t, use the closest USDA entry instead.',
-    '  For these, set brand, leave fdcId null, and fill per_serving exactly as published: serving_label (such as "1 bar (60 g)"), serving_g (grams per serving; estimate it if only a count or volume is given, and say so in basis), kcal, protein_g, carbs_g, fat_g, and fiber_g, sugar_g, sodium_mg, satfat_g when listed (null otherwise).',
-    '- For USDA items set brand, per_serving, source_url and source_title to null.',
-  ].join('\n');
+      : '  * Otherwise, if you reliably know the product\'s published label, use it (source "knowledge"; confidence "low" unless certain). If you don\'t, use the closest database entry instead.',
+    '  For label, web and knowledge items, set brand, leave food_id null, and fill per_serving exactly as published, in kcal and grams (convert kJ at 4.184 kJ per kcal): serving_label (such as "1 bar (60 g)"), serving_g (grams per serving; estimate it if only a count or volume is given, and say so in basis), kcal, protein_g, carbs_g (total carbohydrate), fat_g, and fiber_g, sugar_g, sodium_mg, satfat_g when listed (null otherwise).',
+    '- For database items set per_serving, source_url and source_title to null.',
+  ].filter(Boolean).join('\n');
 }
 
 function outputRules(submit) {
@@ -51,7 +53,7 @@ function outputRules(submit) {
 
 export function buildPrompt(note, hasPhoto, caps) {
   return [
-    'You are helping a person log a meal in a calorie tracker. Every nutrient number must come from a stated source (USDA FoodData Central, a nutrition label, or a cited web page), so identify the foods and their sources and estimate the grams eaten. Never make up nutrient values.',
+    'You are helping a person log a meal in a calorie tracker. Every nutrient number must come from a stated source (a national food composition database, a nutrition label, or a cited web page), so identify the foods and their sources and estimate the grams eaten. Never make up nutrient values.',
     hasPhoto ? 'The attached photo shows the meal.' : 'There is no photo. Work from the description below.',
     note ? `The person's description of what they ate:\n"""${note}"""\n\n${READ_FIRST}` : '',
     '1. List each distinct food or drink. Split plates into components you can weigh, but keep a composite dish whole when it is likely listed as one (pizza slice, burrito, sandwich, a restaurant menu item). Include visible added fats, sauces and drinks. Note any brand names on packaging or in the note.',
@@ -73,20 +75,30 @@ export function buildLookupPrompt(query, caps) {
   ].join('\n\n');
 }
 
+const REGION_NAMES = { usda: 'USDA', canada: 'Canadian', uk: 'UK', france: 'French', australia: 'Australian' };
+
 export function searchTool(onStep) {
   return {
-    name: 'search_usda',
-    description: 'Search the USDA FoodData Central foods bundled with this app (SR Legacy and FNDDS 2021-2023). Returns up to 8 matches with fdcId, description, dataset, calories and macros per 100 g, and common portion weights in grams.',
-    inputSchema: { type: 'object', properties: { query: { type: 'string', description: 'Short food description, e.g. "salmon baked" or "rice white cooked"' } }, required: ['query'] },
+    name: 'search_foods',
+    description: 'Search the national food composition databases bundled with this app: USDA FoodData Central (SR Legacy, FNDDS 2021-2023, Foundation Foods 2026), Canadian Nutrient File 2026, UK CoFID 2021, French Ciqual 2025 and Australian AFCD Release 3. Names are in English. Returns up to 8 matches with id, description, database, kcal and grams of protein, total carbohydrate and fat per 100 g, and common portion weights in grams.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Short food description, e.g. "salmon baked" or "crumpets toasted"' },
+        database: { type: 'string', enum: REGIONS, description: 'Optional: search only one country\'s tables (usda, canada, uk, france or australia)' },
+      },
+      required: ['query'],
+    },
     execute(input) {
       const q = String(input?.query ?? '').trim().slice(0, 80);
       if (!q) throw new Error('query is required');
-      const hits = search(q, 8);
-      onStep?.(`Searched USDA for “${q}”: ${hits.length ? `${hits.length} matches` : 'no matches'}`);
-      if (!hits.length) return { results: [], hint: 'No matches. Try fewer or more generic words, or another source if this is a branded food.' };
+      const region = REGIONS.includes(input?.database) ? input.database : null;
+      const hits = search(q, 8, region);
+      onStep?.(`Searched ${region ? `${REGION_NAMES[region]} food data` : 'food databases'} for “${q}”: ${hits.length ? `${hits.length} match${hits.length === 1 ? '' : 'es'}` : 'no matches'}`);
+      if (!hits.length) return { results: [], hint: 'No matches. Try fewer or more generic words, another database, or another source if this is a branded food.' };
       return {
         results: hits.map(f => ({
-          fdcId: f.id, description: f.desc, dataset: datasetName(f),
+          id: String(f.id), description: f.desc, database: datasetName(f),
           per100g: { kcal: f.per100.kcal, protein_g: f.per100.protein, carbs_g: f.per100.carb, fat_g: f.per100.fat },
           portions: getPortions(f.id).slice(0, 4).map(p => `${p.label} = ${p.g} g`),
         })),
@@ -135,10 +147,10 @@ export function normalize(reply) {
     const stated = it.stated && typeof it.stated === 'object' ? it.stated : null;
     const custom = toCustom(it);
     if (custom) return applyStated({ ...base, label: label || custom.brand || 'Food', fdcId: null, custom }, stated);
-    const food = getFood(it.fdcId) || search(String(it.query || label), 1)[0];
+    const food = getFood(it.food_id ?? it.fdcId) || search(String(it.query || label), 1)[0];
     if (!food) return stated && numOrNull(stated.kcal) != null ? applyStated({ ...base, label: label || 'Food', fdcId: null, custom: null }, stated) : null;
-    // Label or web numbers that failed the checks: keep the food, but as an uncertain USDA stand-in.
-    if (it.source && it.source !== 'usda' && !stated) return { ...base, label: label || food.desc, fdcId: food.id, confidence: 'low', basis: 'Source values looked wrong, so this uses the closest USDA entry. Check it.' };
+    // Label or web numbers that failed the checks: keep the food, but as an uncertain database stand-in.
+    if (it.source && !['database', 'usda', 'branded'].includes(it.source) && !stated) return { ...base, label: label || food.desc, fdcId: food.id, confidence: 'low', basis: 'Source values looked wrong, so this uses the closest database entry. Check it.' };
     return applyStated({ ...base, label: label || food.desc, fdcId: food.id }, stated);
   }).filter(Boolean);
   const title = String(raw.title || '').trim().slice(0, 80) || items.slice(0, 3).map(i => i.label).join(', ');
@@ -174,7 +186,7 @@ export function applyStated(item, stated) {
   if (protein != null) per100.protein = toPer100(protein);
   if (carb != null) per100.carb = toPer100(carb);
   if (fat != null) per100.fat = toPer100(fat);
-  const ref = prev ? { text: prev.urlTitle, href: prev.url } : item.custom ? sourceInfo(item) : food ? { text: food.desc, href: fdcUrl(food.id) } : null;
+  const ref = prev ? { text: prev.urlTitle, href: prev.url } : item.custom ? sourceInfo(item) : food ? { text: food.desc, href: foodUrl(food) } : null;
   return {
     ...item,
     fdcId: null,
@@ -215,5 +227,5 @@ export function sourceInfo(it) {
     return { chip: ORIGIN_CHIP[c.origin], text: `${c.brand ? `${c.brand} · ` : ''}${text}`, href: c.origin === 'web' ? c.url : null };
   }
   const f = getFood(it.fdcId);
-  return { chip: datasetName(f), text: f.desc, href: fdcUrl(f.id) };
+  return { chip: datasetName(f), text: f.desc, href: foodUrl(f) };
 }

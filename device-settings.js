@@ -13,6 +13,7 @@ function write(s) { try { localStorage.setItem(KEY, JSON.stringify(s)); return t
 export const getApiKey = () => read().apiKey || '';
 export const getModel = () => (MODELS.some(m => m.id === read().model) ? read().model : DEFAULT_MODEL);
 export const getWebLookup = () => read().web !== false;
+export const getFdcKey = () => read().fdcKey || '';
 const masked = k => `${k.slice(0, 10)}…${k.slice(-4)}`;
 
 const KEY_ERRORS = {
@@ -34,7 +35,14 @@ export function initDeviceSettings(c) {
       <p id="key-state" class="fine" aria-live="polite"></p>
       <div class="backup-actions"><button type="submit" class="btn btn-primary btn-sm">Save key</button><button type="button" class="link-btn danger" id="key-forget" hidden>Remove key</button></div>
       <div class="field"><label for="model">Model</label><select id="model">${MODELS.map(m => `<option value="${m.id}">${m.label}</option>`).join('')}</select><div class="hint" id="model-hint"></div></div>
-      <label class="switch-row" for="web-lookup"><span><b>Look up brand-name foods on the web</b><span class="hint">When a brand is named or USDA has no match, Claude finds the official nutrition facts and cites the page. About 1¢ per search.</span></span><input type="checkbox" id="web-lookup" role="switch"></label>
+      <label class="switch-row" for="web-lookup"><span><b>Look up brand-name foods on the web</b><span class="hint">When a brand is named and no food database has it, Claude finds the official nutrition facts and cites the page. About 1¢ per search.</span></span><input type="checkbox" id="web-lookup" role="switch"></label>
+    </form>
+    <form id="fdc-form" class="settings-form" novalidate style="margin-top:14px">
+      <div class="field"><label for="fdc-key">USDA FoodData Central key <span class="opt">(optional)</span></label>
+        <div class="field-row key-row"><input id="fdc-key" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Free key from api.data.gov"><button type="submit" class="btn btn-plain btn-sm">Save</button></div>
+        <div class="hint">Claude checks US packaged foods against the labels manufacturers file with USDA (Branded Foods). Without a key, everyone shares a demo allowance of a few lookups an hour; a free key from api.data.gov/signup allows 1,000 an hour. It's sent only to api.nal.usda.gov.</div></div>
+      <p id="fdc-state" class="fine" aria-live="polite"></p>
+      <button type="button" class="link-btn danger" id="fdc-forget" hidden>Remove key</button>
     </form>`;
   $('backup-card').hidden = false;
   $('backup-card').innerHTML = `<div class="card-head"><h2>Backup</h2></div>
@@ -57,11 +65,14 @@ export function initDeviceSettings(c) {
     $('key-show').textContent = show ? 'Hide' : 'Show';
   });
   $('key-form').addEventListener('submit', onSaveKey);
+  $('fdc-form').addEventListener('submit', onSaveFdcKey);
+  $('fdc-forget').addEventListener('click', () => { const s = read(); delete s.fdcKey; write(s); renderFdcKey(); ctx.toast('USDA key removed'); });
   $('key-forget').addEventListener('click', () => { const s = read(); delete s.apiKey; write(s); renderKey(); ctx.toast('API key removed from this device'); });
   $('export-btn').addEventListener('click', onExport);
   $('import-file').addEventListener('change', onImportFile);
   $('import-confirm').addEventListener('click', onImportConfirm);
   renderKey();
+  renderFdcKey();
   renderInstallHint();
   renderStorage();
 }
@@ -84,6 +95,26 @@ async function onSaveKey(e) {
   renderKey('Saved. Checking it with Anthropic…');
   const r = await checkKey(k, getModel());
   renderKey(r.ok ? `Key works. Saved on this device: ${masked(k)}` : KEY_ERRORS[r.code] || `Saved, but the check failed: ${r.message || r.code}`);
+}
+
+function renderFdcKey(status = '') {
+  const k = getFdcKey();
+  $('fdc-state').textContent = status || (k ? `Saved on this device: ${k.slice(0, 4)}…${k.slice(-4)}` : 'Using the shared demo key.');
+  $('fdc-forget').hidden = !k;
+}
+
+async function onSaveFdcKey(e) {
+  e.preventDefault();
+  const k = $('fdc-key').value.trim();
+  if (!/^[A-Za-z0-9]{20,64}$/.test(k)) return renderFdcKey('That doesn’t look like an api.data.gov key: 40 letters and numbers.');
+  if (!write({ ...read(), fdcKey: k })) return renderFdcKey('This browser refused to save the key.');
+  $('fdc-key').value = '';
+  $('fdc-key').blur();
+  renderFdcKey('Saved. Checking it with USDA…');
+  try {
+    const res = await fetch(`https://api.nal.usda.gov/fdc/v1/foods/search?api_key=${encodeURIComponent(k)}&query=apple&pageSize=1`);
+    renderFdcKey(res.ok ? `Key works. Saved on this device: ${k.slice(0, 4)}…${k.slice(-4)}` : res.status === 403 ? 'USDA rejected this key. Check that it was copied in full.' : `Saved, but USDA answered HTTP ${res.status}. It will be tried again on the next lookup.`);
+  } catch { renderFdcKey('Saved. Couldn’t reach USDA to check it; it will be used once you’re online.'); }
 }
 
 async function onExport() {

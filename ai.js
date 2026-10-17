@@ -1,7 +1,8 @@
 // Photo analysis through the Claude API, called straight from the phone with the user's own key.
-// The SDK's tool runner drives the loop: Claude calls search_usda (run here, against the bundled
-// USDA table), may use Anthropic's server-side web search and fetch for branded or missing foods,
-// and finishes by calling submit_meal, whose strict schema guarantees a well-formed result.
+// The SDK's tool runner drives the loop: Claude calls the page's tools (search_foods, run here against
+// the bundled food tables, and search_branded, a live USDA Branded Foods lookup), may use Anthropic's
+// server-side web search and fetch for other branded or missing foods, and finishes by calling
+// submit_meal, whose strict schema guarantees a well-formed result.
 import Anthropic, { betaTool } from './vendor/anthropic-sdk.js';
 
 // Prices per million tokens, used only for the "about N¢" note after each analysis.
@@ -42,8 +43,8 @@ const SUBMIT_SCHEMA = {
         type: 'object',
         properties: {
           label: { type: 'string' },
-          source: { type: 'string', enum: ['usda', 'web', 'label', 'knowledge'] },
-          fdcId: nullable({ type: 'integer' }),
+          source: { type: 'string', enum: ['database', 'web', 'label', 'knowledge'] },
+          food_id: nullable({ type: 'string' }),
           query: { type: 'string' },
           brand: nullable({ type: 'string' }),
           per_serving: nullable(PER_SERVING),
@@ -54,7 +55,7 @@ const SUBMIT_SCHEMA = {
           basis: { type: 'string' },
           confidence: { type: 'string', enum: ['high', 'medium', 'low'] },
         },
-        required: ['label', 'source', 'fdcId', 'query', 'brand', 'per_serving', 'source_url', 'source_title', 'stated', 'grams', 'basis', 'confidence'],
+        required: ['label', 'source', 'food_id', 'query', 'brand', 'per_serving', 'source_url', 'source_title', 'stated', 'grams', 'basis', 'confidence'],
         additionalProperties: false,
       },
     },
@@ -129,17 +130,17 @@ async function run(apiKey, params, signal, onStep) {
 }
 
 /**
- * Runs one analysis. `search` is {description, inputSchema, execute(input)} from analyze.js.
+ * Runs one analysis. `tools` are page tools, each {name, description, inputSchema, execute(input)}.
  * With `web`, Claude may also search the web. Resolves {reply, usd, webUnavailable}; rejects {code, message}.
  */
-export async function analyzeMeal({ apiKey, model, prompt, imageBase64, search, signal, web = true, onStep }) {
+export async function analyzeMeal({ apiKey, model, prompt, imageBase64, tools, signal, web = true, onStep }) {
   const m = modelFor(model);
-  const searchTool = betaTool({
-    name: 'search_usda',
-    description: search.description,
-    inputSchema: search.inputSchema,
-    run: async input => JSON.stringify(await search.execute(input)),
-  });
+  const pageTools = tools.map(t => betaTool({
+    name: t.name,
+    description: t.description,
+    inputSchema: t.inputSchema,
+    run: async input => JSON.stringify(await t.execute(input)),
+  }));
   const submitTool = {
     ...betaTool({
       name: 'submit_meal',
@@ -157,7 +158,7 @@ export async function analyzeMeal({ apiKey, model, prompt, imageBase64, search, 
     max_tokens: 16000,
     cache_control: { type: 'ephemeral' },
     output_config: { effort: 'medium' },
-    tools: [searchTool, submitTool, ...(web ? webTools(m) : [])],
+    tools: [...pageTools, submitTool, ...(web ? webTools(m) : [])],
     max_iterations: 10,
     messages: [{ role: 'user', content }],
   };
@@ -173,7 +174,7 @@ export async function analyzeMeal({ apiKey, model, prompt, imageBase64, search, 
     if (!(web && err.code === 'bad_request')) throw err;
     webUnavailable = true;
     content[content.length - 1] = { type: 'text', text: prompt(false) };
-    try { out = await run(apiKey, { ...params, tools: [searchTool, submitTool] }, signal, onStep); }
+    try { out = await run(apiKey, { ...params, tools: [...pageTools, submitTool] }, signal, onStep); }
     catch (e2) { throw toAppError(e2); }
   }
 

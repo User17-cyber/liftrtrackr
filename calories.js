@@ -1,5 +1,5 @@
 // Calories tab: the day's ring and macros, the meal list, the 14-day chart and the maintenance card.
-import { fdcUrl } from './usda.js';
+import { foodUrl, foodRef } from './usda.js';
 import { AMDR, macroRanges } from './metabolism.js';
 import { targetsFor } from './targets.js';
 import { MEALS } from './analyze.js';
@@ -110,7 +110,8 @@ function renderSummary() {
 
 // Where a logged food's numbers came from: a USDA entry, a cited web page, a package label or Claude.
 function sourceLink(it) {
-  if (it.fdcId) return `<a href="${fdcUrl(it.fdcId)}" target="_blank" rel="noopener" title="${esc(it.desc)}">USDA ${num(it.fdcId)}</a>`;
+  // Logged before more databases were added, entries carry a USDA id and src 0 or 1.
+  if (it.fdcId) { const f = { id: it.fdcId, src: it.src ?? 0 }; return `<a href="${esc(foodUrl(f))}" target="_blank" rel="noopener" title="${esc(it.desc)}">${esc(foodRef(f))}</a>`; }
   let url = null;
   try { const u = new URL(String(it.url || '')); if (u.protocol === 'https:' || u.protocol === 'http:') url = u; } catch { /* no link */ }
   if (it.origin === 'typed') return 'entered by you';

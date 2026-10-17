@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https://api.anthropic.com; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https://api.anthropic.com https://api.nal.usda.gov; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'">
 <meta name="referrer" content="no-referrer">
 <title>LiftrTrackr</title>
 <meta name="description" content="Calories, bodyweight and lifting in one place. Claude identifies each food; USDA FoodData Central supplies every number.">
@@ -268,11 +268,16 @@
           <div class="card" id="backup-card" hidden></div>
           <div class="card" id="sources">
             <div class="card-head"><h2>About</h2></div>
-            <p class="fine">Nutrients from USDA FoodData Central; foods identified by Claude. Energy from the Mifflin-St Jeor equation and, once you have the data, from your own meals and weigh-ins. Estimates for tracking, not medical advice.</p>
+            <p class="fine">Nutrients from national food composition databases (USDA, Canada, UK, France and Australia); foods identified by Claude. Every table is converted to the same units: per 100 g, energy in kcal, nutrients in grams (sodium in mg), carbohydrate as total carbohydrate. Energy from the Mifflin-St Jeor equation and, once you have the data, from your own meals and weigh-ins. Estimates for tracking, not medical advice.</p>
             <details class="disclose">
               <summary><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>Sources</summary>
               <ol>
-                <li>USDA Agricultural Research Service, <a href="https://fdc.nal.usda.gov/" target="_blank" rel="noopener">FoodData Central</a>: SR Legacy (April 2018) and FNDDS 2021–2023 (October 2024). <span id="food-count"></span></li>
+                <li>USDA Agricultural Research Service, <a href="https://fdc.nal.usda.gov/" target="_blank" rel="noopener">FoodData Central</a>: SR Legacy (April 2018), FNDDS 2021–2023 (October 2024) and Foundation Foods (April 2026); in the installed app, Branded Foods through the FoodData Central API. Public domain. <span id="food-count"></span></li>
+                <li>Health Canada, <a href="https://open.canada.ca/data/en/dataset/1b6139bd-ed7e-4043-bc28-ff00e10f3109" target="_blank" rel="noopener">Canadian Nutrient File 2026</a>. Contains information licensed under the Open Government Licence – Canada. Foods copied unchanged from USDA are left out.</li>
+                <li>Public Health England (2021), <a href="https://www.gov.uk/government/publications/composition-of-foods-integrated-dataset-cofid" target="_blank" rel="noopener">McCance and Widdowson’s Composition of Foods Integrated Dataset</a> (CoFID). Contains public sector information licensed under the Open Government Licence v3.0.</li>
+                <li>Anses (2025), <a href="https://ciqual.anses.fr/" target="_blank" rel="noopener">Ciqual French food composition table</a> (Licence Ouverte / Etalab 2.0). English food names from the table.</li>
+                <li>Food Standards Australia New Zealand (2025), <a href="https://www.foodstandards.gov.au/science-data/food-nutrient-databases/afcd" target="_blank" rel="noopener">Australian Food Composition Database – Release 3</a> (CC BY 4.0). Adapted: energy converted from kJ at 4.184 kJ per kcal.</li>
+                <li>CoFID, Ciqual and AFCD report available carbohydrate; LiftrTrackr adds their dietary fibre back so carbohydrate means total carbohydrate everywhere, as on US labels.</li>
                 <li>Mifflin MD, St Jeor ST, et al. <i>Am J Clin Nutr</i> 1990;51:241–7. Accuracy review: Frankenfield D, et al. <i>J Am Diet Assoc</i> 2005;105:775–89.</li>
                 <li>Roza AM, Shizgal HM (revised Harris-Benedict). <i>Am J Clin Nutr</i> 1984;40:168–82. Katch-McArdle: 370 + 21.6 × lean mass (kg).</li>
                 <li>Institute of Medicine, <i>Dietary Reference Intakes for Energy, Carbohydrate, Fiber, Fat, Fatty Acids, Cholesterol, Protein, and Amino Acids</i>, 2005.</li>
