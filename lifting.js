@@ -5,7 +5,7 @@
 import { LB_PER_KG } from './metabolism.js';
 import { timeChart, dayAtPointer, hoverAt, nearest, dayNum } from './charts.js';
 import { bodyweightSeries } from './weight.js';
-import { initSplit, startEditing, normalizePlan, plannedFor, dayById, suggestion } from './split.js';
+import { initSplit, startEditing, normalizePlan, plannedFor, dayById } from './split.js';
 import { initCalendar } from './lift-calendar.js';
 import { initRestTimer, startRest, restLabel } from './rest-timer.js';
 
@@ -235,13 +235,13 @@ function exHtml(ex, i) {
   const last = lastSessionWith(keyOf(ex.name), draft.date);
   const lastSets = last?.ex.sets.filter(s => s.reps > 0) || [];
   const best = bestText(ex);
-  const pe = planFor(ex), next = pe ? suggestion(pe, lastSets, ctx.units()) : null;
+  const pe = planFor(ex);
   return `<div class="lx" data-x="${i}">
     <div class="lx-head">
       <input type="text" class="lx-name" list="lift-names" value="${esc(ex.name)}" maxlength="60" aria-label="Exercise name">
       <button type="button" class="remove-btn" data-act="rm-ex" aria-label="Remove ${esc(ex.name)}">${ICON_X}</button>
     </div>
-    ${pe ? `<p class="lx-plan">Plan: ${pe.sets} × ${esc(pe.reps)}${next ? ` · Next: ${next.kg ? `${esc(wfmt(next.kg))}, ` : ''}${esc(next.text)}` : ''}</p>` : ''}
+    ${pe ? `<p class="lx-plan">Plan: ${pe.sets} × ${esc(pe.reps)}</p>` : ''}
     ${last ? `<p class="lx-last">Last time, ${esc(dateShort(last.date))}: ${esc(setsSummary(last.ex.sets))}</p>` : ''}
     <div class="sets">${ex.sets.map((s, j) => setHtml(s, j, lastSets[j] || lastSets[lastSets.length - 1] || ex.sets[j - 1])).join('')}</div>
     <div class="lx-foot">

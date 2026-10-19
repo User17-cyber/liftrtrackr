@@ -415,10 +415,16 @@ body[data-quick] #actionbar { display: none !important; }
 .split-ed-day input, .split-ed-day select { background: var(--surface); }
 .split-ed-head { display: flex; align-items: center; gap: 10px; }
 .split-ed-head input { flex: 1; min-width: 0; font-weight: 700; }
-.sd-ex { display: grid; grid-template-columns: 3.6rem auto 5.2rem 1fr 44px; grid-template-areas: "n n n n r" "s x p . ."; align-items: center; gap: 6px; padding-bottom: 8px; border-bottom: 0.5px solid var(--line); }
+.sd-ex { display: grid; grid-template-columns: 3.6rem auto 5.2rem 1fr 44px 44px; grid-template-areas: "n n n n n r" "s x p . m m"; align-items: center; gap: 6px; padding-bottom: 8px; border-bottom: 0.5px solid var(--line); }
 .sd-ex input { min-width: 0; padding-inline: 10px; }
 .sd-x-name { grid-area: n; } .sd-x-sets { grid-area: s; } .sd-ex .u { grid-area: x; color: var(--muted); } .sd-x-reps { grid-area: p; } .sd-ex .remove-btn { grid-area: r; }
-@media (min-width: 600px) { .sd-ex { grid-template-columns: minmax(0, 1fr) 3.6rem auto 5.2rem 44px; grid-template-areas: "n s x p r"; } }
+.sd-move { grid-area: m; display: flex; justify-content: flex-end; gap: 6px; }
+.move-btn { display: grid; place-items: center; width: 44px; height: 44px; border: 0; border-radius: 12px; background: var(--surface); color: var(--ink); cursor: pointer; }
+.move-btn svg { width: 20px; height: 20px; }
+.move-btn:disabled { color: var(--muted); opacity: 0.4; cursor: default; }
+.move-btn:not(:disabled):active { background: var(--accent-soft); }
+.move-btn:focus-visible { outline: 2.5px solid var(--accent); outline-offset: 1px; }
+@media (min-width: 600px) { .sd-ex { grid-template-columns: minmax(0, 1fr) 3.6rem auto 5.2rem auto 44px; grid-template-areas: "n s x p m r"; } }
 
 /* Training calendar */
 .cal-nav { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: -4px 0 8px; }

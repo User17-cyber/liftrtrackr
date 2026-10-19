@@ -1,11 +1,12 @@
 // Training split: named workout days (Push, Pull, Legs…) with their planned exercises, sets and rep
 // ranges, and which day falls on each weekday. Saved as one `plan` document per person:
 // {template, days: [{id, name, exercises: [{name, sets, reps}]}], week: [day id or null, Monday first]}.
-// Also suggests the next session's target for each exercise (double progression: add reps until the
-// top of the range is reached on every set, then add weight).
+// Exercises keep the order set here, which is the order a session started from the plan lists them.
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const ICON_X = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>';
+const ICON_UP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 15 6-6 6 6"/></svg>';
+const ICON_DOWN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>';
 export const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const keyOf = name => String(name || '').trim().toLowerCase();
 
@@ -72,24 +73,6 @@ export function sessionDay(plan, session) {
   return bestN >= 1 ? best : null;
 }
 
-// Lowest and highest reps in a range such as "6–8", "8-12" or "5".
-export function repRange(text) {
-  const n = String(text || '').match(/\d+/g)?.map(Number) || [];
-  return n.length ? [Math.min(...n), Math.max(...n)] : null;
-}
-
-// What to aim for next time, from the last session's working sets.
-export function suggestion(planEx, lastSets, units) {
-  const r = repRange(planEx?.reps), sets = (lastSets || []).filter(s => s.reps > 0);
-  if (!r || !sets.length) return null;
-  const top = Math.max(...sets.map(s => s.kg));
-  const work = sets.filter(s => s.kg === top);
-  if (!(top > 0)) return work.every(s => s.reps >= r[1]) ? { kg: null, text: `you hit ${r[1]} reps on every set, so add weight or a harder variation` } : { kg: null, text: `aim for one more rep than last time (up to ${r[1]})` };
-  const step = units === 'us' ? 5 / 2.20462 : 2.5;
-  if (work.length >= Math.min(planEx.sets, sets.length) && work.every(s => s.reps >= r[1])) return { kg: top + step, text: `add weight, aim for ${r[0]}+ reps` };
-  return { kg: top, text: `same weight, aim for one more rep than last time (up to ${r[1]})` };
-}
-
 /* ---------- editor card ---------- */
 
 let ctx, editing = false, draft = null, saveTimer = null;
@@ -138,6 +121,10 @@ function editorHtml() {
         <input type="text" class="sd-x-name" list="lift-names" value="${esc(x.name)}" maxlength="60" placeholder="Exercise" aria-label="Exercise">
         <input type="number" class="sd-x-sets" inputmode="numeric" min="1" max="10" value="${x.sets}" aria-label="Sets"><span class="u">×</span>
         <input type="text" class="sd-x-reps" value="${esc(x.reps)}" maxlength="12" inputmode="text" aria-label="Rep range, such as 8–12">
+        <span class="sd-move">
+          <button type="button" class="move-btn" data-act="up" ${xi === 0 ? 'disabled' : ''} aria-label="Move ${esc(x.name || 'exercise')} up">${ICON_UP}</button>
+          <button type="button" class="move-btn" data-act="down" ${xi === d.exercises.length - 1 ? 'disabled' : ''} aria-label="Move ${esc(x.name || 'exercise')} down">${ICON_DOWN}</button>
+        </span>
         <button type="button" class="remove-btn" data-act="rm-ex" aria-label="Remove ${esc(x.name || 'exercise')}">${ICON_X}</button>
       </div>`).join('')}
       <button type="button" class="btn btn-plain btn-sm" data-act="add-ex">+ Exercise</button>
@@ -191,7 +178,19 @@ async function onClick(e) {
     draft.days.splice(Number(dEl.dataset.d), 1);
   } else if (act === 'add-ex') d.exercises.push(T('', 3, '8–12'));
   else if (act === 'rm-ex') d.exercises.splice(Number(b.closest('.sd-ex').dataset.x), 1);
-  else return;
+  else if (act === 'up' || act === 'down') {
+    const i = Number(b.closest('.sd-ex').dataset.x), j = act === 'up' ? i - 1 : i + 1;
+    if (j < 0 || j >= d.exercises.length) return;
+    [d.exercises[i], d.exercises[j]] = [d.exercises[j], d.exercises[i]];
+    $('split-body').innerHTML = editorHtml();
+    // Follow the moved exercise, so repeated taps keep moving it (falls back to the other arrow at an end).
+    const row = $('split-body').querySelector(`.split-ed-day[data-d="${dEl.dataset.d}"] .sd-ex[data-x="${j}"]`);
+    const btn = row?.querySelector(`[data-act="${act}"]:not(:disabled)`) || row?.querySelector('.move-btn:not(:disabled)');
+    btn?.focus({ preventScroll: true });
+    row?.scrollIntoView({ block: 'nearest' });
+    scheduleSave();
+    return;
+  } else return;
   $('split-body').innerHTML = editorHtml();
   if (act === 'add-ex') $('split-body').querySelector(`.split-ed-day[data-d="${dEl.dataset.d}"] .sd-ex:last-of-type .sd-x-name`)?.focus({ preventScroll: true });
   scheduleSave();
