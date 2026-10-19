@@ -266,7 +266,7 @@ function renderSession() {
       ${plan ? `<div class="start-days">${planned?.exercises.length ? `<button type="button" class="btn btn-primary" data-act="start-day" data-day="${esc(planned.id)}">Start ${esc(planned.name)}</button>` : ''}${others.map(d => `<button type="button" class="btn btn-plain btn-sm" data-act="start-day" data-day="${esc(d.id)}">${esc(d.name)}</button>`).join('')}</div>` : ''}`;
     return;
   }
-  el.innerHTML = draft.exercises.map(exHtml).join('') + `<p class="lift-total">${totalLine()}</p>`;
+  el.innerHTML = dayBarHtml() + draft.exercises.map(exHtml).join('') + `<p class="lift-total">${totalLine()}</p>`;
 }
 
 function totalLine() {
@@ -299,6 +299,8 @@ function onClick(e) {
   const b = e.target.closest('button[data-act]');
   if (!b) return;
   if (b.dataset.act === 'start-day') return startDay(b.dataset.day);
+  if (b.dataset.act === 'switch-day') return switchDay(b.dataset.day);
+  if (b.dataset.act === 'clear-session') return clearSession(b);
   if (b.dataset.act === 'rest') { startRest(); return; }
   const xEl = b.closest('.lx'), i = Number(xEl.dataset.x), ex = draft.exercises[i];
   if (b.dataset.act === 'add-set') {
@@ -325,6 +327,44 @@ function startDay(id) {
   scheduleSave();
   renderSession();
   $('lift-session').querySelector('.set-w')?.focus({ preventScroll: true });
+}
+
+const logged = ex => ex.sets.some(s => s.reps > 0);
+
+// Above a session's exercises: the split's days, to switch what this session is, and a way to start over.
+function dayBarHtml() {
+  const days = (normalizePlan(ctx.store()?.plan)?.days || []).filter(d => d.exercises.length);
+  return `<div class="day-bar">
+    ${days.length ? `<div class="day-chips" role="group" aria-label="Workout day">${days.map(d => `<button type="button" class="day-chip" data-act="switch-day" data-day="${esc(d.id)}" aria-pressed="${draft.day?.id === d.id}">${esc(d.name)}</button>`).join('')}</div>` : ''}
+    <button type="button" class="link-btn danger" data-act="clear-session">Clear session</button>
+  </div>`;
+}
+
+// Makes this session a different split day. Exercises with sets already logged stay; the rest of the
+// old day's planned exercises are swapped for the new day's.
+function switchDay(id) {
+  const d = dayById(normalizePlan(ctx.store()?.plan), id);
+  if (!d || !draft || draft.day?.id === d.id) return;
+  const kept = draft.exercises.filter(x => x.name.trim() && logged(x));
+  const have = new Set(kept.map(x => keyOf(x.name)));
+  draft.day = { id: d.id, name: d.name };
+  draft.exercises = [...kept, ...d.exercises.filter(x => !have.has(keyOf(x.name))).map(x => ({ name: x.name, sets: Array.from({ length: x.sets }, () => ({ kg: 0, reps: 0 })) }))];
+  scheduleSave();
+  renderSession();
+  if (kept.length) ctx.toast(`Switched to ${d.name}. Kept ${kept.length} exercise${kept.length === 1 ? '' : 's'} you’d already logged.`);
+}
+
+// Empties the session, back to the choice of split days. Asks again first if sets would be deleted.
+function clearSession(b) {
+  if (draft.exercises.some(logged) && b.dataset.confirm !== '1') {
+    b.dataset.confirm = '1';
+    b.textContent = 'Tap again to delete the logged sets';
+    return;
+  }
+  draft.exercises = [];
+  draft.day = null;
+  scheduleSave();
+  renderSession();
 }
 
 function addExercise() {

@@ -390,6 +390,11 @@ body[data-quick] #actionbar { display: none !important; }
 .lx-best.pr { color: var(--accent); }
 .lx-plan { margin: 0; color: var(--accent); font-size: 14px; font-weight: 600; }
 .start-days { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
+.day-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; margin-bottom: 12px; }
+.day-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.day-chip { min-height: 40px; padding: 0 14px; border: 0; border-radius: 999px; background: var(--fill); color: var(--ink); font: inherit; font-size: 15px; font-weight: 600; cursor: pointer; }
+.day-chip[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); }
+.day-chip:focus-visible { outline: 2.5px solid var(--accent); outline-offset: 2px; }
 .rest-bar { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 8px); z-index: var(--z-dock); display: flex; align-items: center; gap: 6px; margin: 0 0 12px; padding: 6px 6px 6px 14px; border-radius: var(--r-ctl); background: var(--accent-soft); }
 .rest-label { font-weight: 600; }
 .rest-left { flex: 1; font-family: var(--font-display); font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; }
