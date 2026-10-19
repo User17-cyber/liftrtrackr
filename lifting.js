@@ -1,9 +1,13 @@
 // Strength-training log. Each day's session holds exercises and their sets (weight stored in kg,
-// reps). Estimated one-rep max uses the Epley formula, 1RM = weight × (1 + reps / 30), which is
-// reasonable up to about 12 reps; higher-rep sets are left out of the estimate.
+// reps), and the split day it was started from. Estimated one-rep max uses the Epley formula,
+// 1RM = weight × (1 + reps / 30), which is reasonable up to about 12 reps; higher-rep sets are left
+// out of the estimate. The split planner, calendar and rest timer live in their own modules.
 import { LB_PER_KG } from './metabolism.js';
 import { timeChart, dayAtPointer, hoverAt, nearest, dayNum } from './charts.js';
 import { bodyweightSeries } from './weight.js';
+import { initSplit, startEditing, normalizePlan, plannedFor, dayById, suggestion } from './split.js';
+import { initCalendar } from './lift-calendar.js';
+import { initRestTimer, startRest, restLabel } from './rest-timer.js';
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -29,8 +33,9 @@ export function e1rm(kg, reps) {
 
 /* ---------- data ---------- */
 
-// Untrusted input (the store, a backup) becomes {date, exercises:[{name, sets:[{kg, reps}]}]}.
+// Untrusted input (the store, a backup) becomes {date, exercises:[{name, sets:[{kg, reps}]}], day?:{id, name}}.
 export function normalizeSession(date, raw) {
+  const day = raw?.day?.id ? { id: String(raw.day.id).slice(0, 24), name: String(raw.day.name || '').slice(0, 30) } : null;
   const exercises = (Array.isArray(raw?.exercises) ? raw.exercises : []).slice(0, 40).map(x => ({
     name: String(x?.name || '').trim().slice(0, 60),
     sets: (Array.isArray(x?.sets) ? x.sets : []).slice(0, 50).map(s => ({
@@ -38,10 +43,10 @@ export function normalizeSession(date, raw) {
       reps: Number.isInteger(s?.reps) && s.reps >= 0 && s.reps <= 500 ? s.reps : 0,
     })),
   })).filter(x => x.name);
-  return { date, exercises };
+  return day ? { date, exercises, day } : { date, exercises };
 }
 
-let ctx, draft = null, loadedJSON = '', dirty = false, saveTimer = null, pick = null, range = 91, charts = null;
+let ctx, draft = null, loadedJSON = '', dirty = false, saveTimer = null, pick = null, range = 91, charts = null, split = null, calendar = null;
 
 function sessions() {
   const all = ctx.store()?.lifts || {};
@@ -98,16 +103,20 @@ function setsSummary(sets) {
 /* ---------- editing state ---------- */
 
 function clean(d) {
-  return {
+  const out = {
     date: d.date,
     exercises: d.exercises.filter(x => x.name.trim()).map(x => ({ name: x.name.trim().slice(0, 60), sets: x.sets.filter(s => s.reps > 0).map(s => ({ kg: s.kg, reps: s.reps })) })),
   };
+  return d.day ? { ...out, day: d.day } : out;
 }
 
 function loadDraft(date) {
   const doc = normalizeSession(date, ctx.store()?.lifts?.[date]);
   // Edit copy: blank set rows are allowed here and dropped on save.
-  draft = { date, exercises: doc.exercises.map(x => ({ name: x.name, sets: x.sets.length ? x.sets.map(s => ({ ...s })) : [{ kg: 0, reps: 0 }] })) };
+  // An exercise started from the split but not yet done gets one blank row per planned set.
+  const planned = doc.day ? dayById(normalizePlan(ctx.store()?.plan), doc.day.id) : null;
+  const blanks = name => Array.from({ length: planned?.exercises.find(x => keyOf(x.name) === keyOf(name))?.sets || 1 }, () => ({ kg: 0, reps: 0 }));
+  draft = { date, day: doc.day || null, exercises: doc.exercises.map(x => ({ name: x.name, sets: x.sets.length ? x.sets.map(s => ({ ...s })) : blanks(x.name) })) };
   loadedJSON = JSON.stringify(doc);
 }
 
@@ -156,10 +165,17 @@ export function initLifting(c) {
   let lastW = 0;
   new ResizeObserver(([e]) => { const w = Math.round(e.contentRect.width); if (w && w !== lastW) { lastW = w; drawCharts(); } }).observe(wrap);
   // A workout is often closed mid-set: save what's typed when the app is hidden.
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flush(); });
-  addEventListener('pagehide', flush);
-  return { render, flush };
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushAll(); });
+  addEventListener('pagehide', flushAll);
+  const sub = { ...c, sessions, onPlanChange: () => render() };
+  split = initSplit(sub);
+  calendar = initCalendar(sub);
+  initRestTimer(c);
+  $('split-edit').addEventListener('click', () => startEditing());
+  return { render, flush: flushAll };
 }
+
+function flushAll() { flush(); split?.flush(); }
 
 export function render() {
   if (!ctx) return;
@@ -172,6 +188,8 @@ export function render() {
   renderWeek();
   renderNames();
   renderProgress();
+  split.render();
+  calendar.render();
 }
 
 /* ---------- session ---------- */
@@ -193,20 +211,43 @@ function exBest(ex) {
   return best;
 }
 
+// Best estimated 1RM for an exercise in sessions before a date (null if none).
+function priorBest(key, before) {
+  let best = null;
+  for (const p of seriesFor(key)) if (p.date < before && p.best != null && (best == null || p.best > best)) best = p.best;
+  return best;
+}
+
+function bestText(ex) {
+  const best = exBest(ex);
+  if (!best) return '';
+  const prior = priorBest(keyOf(ex.name), draft.date);
+  return prior != null && best > prior + 0.01 ? `New est. 1RM record: ${wfmt(best)}` : `Est. 1RM ${wfmt(best)}`;
+}
+
+// The plan's sets and reps for this exercise on this session's split day, if any.
+function planFor(ex) {
+  const plan = normalizePlan(ctx.store()?.plan), d = draft.day ? dayById(plan, draft.day.id) : plannedFor(plan, draft.date);
+  return d?.exercises.find(x => keyOf(x.name) === keyOf(ex.name)) || null;
+}
+
 function exHtml(ex, i) {
   const last = lastSessionWith(keyOf(ex.name), draft.date);
   const lastSets = last?.ex.sets.filter(s => s.reps > 0) || [];
-  const best = exBest(ex);
+  const best = bestText(ex);
+  const pe = planFor(ex), next = pe ? suggestion(pe, lastSets, ctx.units()) : null;
   return `<div class="lx" data-x="${i}">
     <div class="lx-head">
       <input type="text" class="lx-name" list="lift-names" value="${esc(ex.name)}" maxlength="60" aria-label="Exercise name">
       <button type="button" class="remove-btn" data-act="rm-ex" aria-label="Remove ${esc(ex.name)}">${ICON_X}</button>
     </div>
+    ${pe ? `<p class="lx-plan">Plan: ${pe.sets} × ${esc(pe.reps)}${next ? ` · Next: ${next.kg ? `${esc(wfmt(next.kg))}, ` : ''}${esc(next.text)}` : ''}</p>` : ''}
     ${last ? `<p class="lx-last">Last time, ${esc(dateShort(last.date))}: ${esc(setsSummary(last.ex.sets))}</p>` : ''}
     <div class="sets">${ex.sets.map((s, j) => setHtml(s, j, lastSets[j] || lastSets[lastSets.length - 1] || ex.sets[j - 1])).join('')}</div>
     <div class="lx-foot">
       <button type="button" class="btn btn-plain btn-sm" data-act="add-set">+ Add set</button>
-      <span class="lx-best">${best ? `Est. 1RM ${esc(wfmt(best))}` : ''}</span>
+      <button type="button" class="btn btn-plain btn-sm" data-act="rest">${restLabel()}</button>
+      <span class="lx-best${best.startsWith('New') ? ' pr' : ''}">${esc(best)}</span>
     </div>
   </div>`;
 }
@@ -214,10 +255,15 @@ function exHtml(ex, i) {
 function renderSession() {
   const el = $('lift-session');
   const today = draft.date === ctx.today();
-  $('lift-session-h').textContent = today ? 'Today’s session' : `Session, ${dateShort(draft.date)}`;
+  const dayName = draft.day ? dayById(normalizePlan(ctx.store()?.plan), draft.day.id)?.name || draft.day.name : '';
+  $('lift-session-h').textContent = `${today ? 'Today’s session' : `Session, ${dateShort(draft.date)}`}${dayName ? ` · ${dayName}` : ''}`;
   if (!ctx.store()) { el.innerHTML = '<p class="fine">Opening your training log…</p>'; return; }
   if (!draft.exercises.length) {
-    el.innerHTML = `<div class="empty"><strong>Nothing logged ${today ? 'yet today' : 'on this day'}.</strong>Add an exercise below. Sets save as you type, and last session's numbers show as hints.</div>`;
+    // With a split, the day's planned workout (or any other split day) starts with one tap.
+    const plan = normalizePlan(ctx.store()?.plan), planned = plannedFor(plan, draft.date);
+    const others = plan ? plan.days.filter(d => d !== planned && d.exercises.length) : [];
+    el.innerHTML = `<div class="empty"><strong>Nothing logged ${today ? 'yet today' : 'on this day'}.</strong>${plan ? (planned ? `${today ? 'Today' : 'This day'} is ${esc(planned.name)} in your split.` : 'A rest day in your split.') : 'Add an exercise below, or plan a split further down to start workouts with one tap.'} Sets save as you type, and last session's numbers show as hints.</div>
+      ${plan ? `<div class="start-days">${planned?.exercises.length ? `<button type="button" class="btn btn-primary" data-act="start-day" data-day="${esc(planned.id)}">Start ${esc(planned.name)}</button>` : ''}${others.map(d => `<button type="button" class="btn btn-plain btn-sm" data-act="start-day" data-day="${esc(d.id)}">${esc(d.name)}</button>`).join('')}</div>` : ''}`;
     return;
   }
   el.innerHTML = draft.exercises.map(exHtml).join('') + `<p class="lift-total">${totalLine()}</p>`;
@@ -240,8 +286,9 @@ function onInput(e) {
     const v = Number(t.value);
     if (t.classList.contains('set-w')) set.kg = v > 0 ? Math.round(fromU(v) * 100) / 100 : 0;
     if (t.classList.contains('set-r')) set.reps = v > 0 ? Math.min(500, Math.round(v)) : 0;
-    const best = exBest(ex);
-    xEl.querySelector('.lx-best').textContent = best ? `Est. 1RM ${wfmt(best)}` : '';
+    const best = bestText(ex), bestEl = xEl.querySelector('.lx-best');
+    bestEl.textContent = best;
+    bestEl.classList.toggle('pr', best.startsWith('New'));
   }
   const total = $('lift-session').querySelector('.lift-total');
   if (total) total.textContent = totalLine();
@@ -251,6 +298,8 @@ function onInput(e) {
 function onClick(e) {
   const b = e.target.closest('button[data-act]');
   if (!b) return;
+  if (b.dataset.act === 'start-day') return startDay(b.dataset.day);
+  if (b.dataset.act === 'rest') { startRest(); return; }
   const xEl = b.closest('.lx'), i = Number(xEl.dataset.x), ex = draft.exercises[i];
   if (b.dataset.act === 'add-set') {
     const prev = ex.sets[ex.sets.length - 1];
@@ -264,6 +313,18 @@ function onClick(e) {
   scheduleSave();
   renderSession();
   if (b.dataset.act === 'add-set') $('lift-session').querySelector(`.lx[data-x="${i}"] .set:last-child .set-w`)?.focus({ preventScroll: true });
+}
+
+// Fills an empty session with a split day's exercises, one blank row per planned set; last
+// session's weights and reps show in each row as placeholders.
+function startDay(id) {
+  const d = dayById(normalizePlan(ctx.store()?.plan), id);
+  if (!d || !draft) return;
+  draft.day = { id: d.id, name: d.name };
+  draft.exercises = d.exercises.map(x => ({ name: x.name, sets: Array.from({ length: x.sets }, () => ({ kg: 0, reps: 0 })) }));
+  scheduleSave();
+  renderSession();
+  $('lift-session').querySelector('.set-w')?.focus({ preventScroll: true });
 }
 
 function addExercise() {

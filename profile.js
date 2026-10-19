@@ -95,8 +95,8 @@ async function onSubmit(e) {
   }
   if (!ctx.store()) return ctx.toast(ctx.saveError({ code: 'not_ready' }));
   try {
-    const targets = ctx.store().profile?.targets;
-    await ctx.store().saveProfile(targets ? { ...v.profile, targets } : v.profile);
+    // Keep what other settings store on the profile (targets, photo-estimate settings, learned portions).
+    await ctx.store().saveProfile({ ...(ctx.store().profile || {}), ...v.profile });
     document.activeElement?.blur?.();
     ctx.toast('Details saved. Your calorie target is updated.');
   } catch (err) { ctx.toast(ctx.saveError(err)); }

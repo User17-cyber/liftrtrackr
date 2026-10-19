@@ -10,13 +10,13 @@ export { openStore } from './store.js';
 export const canSearchWeb = () => getWebLookup();
 
 // buildPrompt({tools, web, submit, branded}) returns the instruction text for these capabilities.
-export async function analyzeMeal({ buildPrompt, imageBlob, search, signal, onStep }) {
+export async function analyzeMeal({ buildPrompt, imageBlob, search, signal, onStep, thorough = false }) {
   const apiKey = getApiKey();
   if (!apiKey) throw { code: 'no_key' };
   if (navigator.onLine === false) throw { code: 'offline' };
   const imageBase64 = imageBlob ? await blobToBase64(imageBlob) : null;
   return callApi({
-    apiKey, model: getModel(), imageBase64, signal, onStep, web: getWebLookup(),
+    apiKey, model: getModel(), imageBase64, signal, onStep, web: getWebLookup(), effort: thorough ? 'high' : 'medium',
     tools: [search, brandedTool({ apiKey: getFdcKey(), onStep })],
     prompt: web => buildPrompt({ tools: true, web, submit: true, branded: true }),
   });

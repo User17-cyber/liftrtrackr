@@ -2,8 +2,10 @@
 // the page computes every nutrient value. platform.js decides how Claude is reached: the viewer's own
 // Claude plan on claude.ai, or the API key saved on this device in the installed app.
 import { getFood, search, getPortions, nutrientsFor, sumNutrients, datasetName } from './usda.js';
+import { itemNutrients, itemHtml, macroLine, totalsHtml, addonsHtml, warningsHtml } from './meal-view.js';
+import { promptContext, accuracyPrefs, applyCalibration, recordCorrections } from './accuracy.js';
 import { analyzeMeal, canSearchWeb, kind } from './platform.js';
-import { buildPrompt, buildLookupPrompt, searchTool, normalize, customNutrients, sourceInfo, applyStated, statedCalories } from './food-ai.js';
+import { buildPrompt, buildLookupPrompt, searchTool, normalize, customNutrients, applyStated, statedCalories } from './food-ai.js';
 import { initQuickAdd } from './quick-add.js';
 
 const $ = id => document.getElementById(id);
@@ -177,11 +179,13 @@ async function analyze() {
   ctl = new AbortController();
   startProgress(photo ? 'Claude is looking at your plate' : 'Claude is reading your description');
   try {
+    const store = opts.store();
     const { reply, usd, webUnavailable } = await analyzeMeal({
-      buildPrompt: caps => buildPrompt(note, !!photo, caps), imageBlob: photo?.blob || null,
-      search: searchTool(addStep), signal: ctl.signal, onStep: addStep,
+      buildPrompt: caps => buildPrompt(note, !!photo, caps, promptContext(store)), imageBlob: photo?.blob || null,
+      search: searchTool(addStep), signal: ctl.signal, onStep: addStep, thorough: !!accuracyPrefs(store).thorough,
     });
     const r = normalize(reply);
+    r.items = applyCalibration(store, r.items);
     // Safety net: one calorie figure in the description and one food means that food has those calories.
     const fromNote = statedCalories(note);
     if (fromNote != null && r.items.length === 1 && r.items[0].custom?.origin !== 'stated') r.items[0] = applyStated(r.items[0], { kcal: fromNote });
@@ -246,57 +250,6 @@ function resetIdle() {
   renderResult();
 }
 
-function itemNutrients(it) { return it.custom ? customNutrients(it.custom, it.grams) : nutrientsFor(getFood(it.fdcId), it.grams); }
-const itemPortions = it => (it.custom ? [it.custom.serving] : getPortions(it.fdcId));
-
-function itemHtml(it, i) {
-  const n = itemNutrients(it), src = sourceInfo(it);
-  const portions = itemPortions(it);
-  const conf = it.confidence ? `<span class="conf conf-${it.confidence}">${{ high: 'High confidence', medium: 'Medium confidence', low: 'Low confidence, check the grams' }[it.confidence]}</span>` : '';
-  return `<div class="item" data-i="${i}">
-    <div class="item-top">
-      <input type="text" class="item-name" value="${esc(it.label)}" maxlength="80" aria-label="Food name">
-      <button type="button" class="remove-btn" aria-label="Remove ${esc(it.label)}">${ICON_X}</button>
-    </div>
-    <div class="item-match"><span class="src">${esc(src.chip)}</span>${src.href ? `<a href="${esc(src.href)}" target="_blank" rel="noopener">${esc(src.text)}</a>` : esc(src.text)} · <button type="button" class="link-btn change">${it.custom ? 'Use a database match' : 'Change'}</button></div>
-    <div class="item-controls">
-      <div class="stepper">
-        <button type="button" class="step" data-dir="-1" aria-label="Less ${esc(it.label)}">−</button>
-        <input type="number" class="grams" inputmode="numeric" min="1" max="3000" step="1" value="${it.grams}" aria-label="Grams of ${esc(it.label)}">
-        <span class="u" aria-hidden="true">g</span>
-        <button type="button" class="step" data-dir="1" aria-label="More ${esc(it.label)}">+</button>
-      </div>
-      ${portions.length ? `<select class="portion" aria-label="Set the weight from a portion"><option value="">${it.custom ? 'Servings…' : 'Portions…'}</option>${portions.map(p => `<option value="${p.g}">${esc(p.label)} · ${fmt(p.g, p.g < 10 ? 1 : 0)} g</option>`).join('')}</select>` : ''}
-    </div>
-    <div class="item-meta"><label class="item-kcal"><input type="number" class="kcal-in" inputmode="numeric" min="0" step="1" value="${Math.round(n.kcal)}" aria-label="Calories for ${esc(it.label)}">kcal</label>${conf}<span class="macros-line">${macroLine(n)}</span>${it.basis ? `<span>${esc(it.basis)}</span>` : ''}</div>
-  </div>`;
-}
-const macroLine = n => `Protein ${fmt(n.protein)} g · Carbs ${fmt(n.carb)} g · Fat ${fmt(n.fat)} g`;
-
-// Meal totals: calories, the energy split between macronutrients, and the minor nutrients.
-function totalsHtml() {
-  const t = sumNutrients(result.items.map(itemNutrients));
-  const grams = result.items.reduce((a, i) => a + i.grams, 0);
-  const energy = { protein: t.protein * 4, carb: t.carb * 4, fat: t.fat * 9 };
-  const eSum = energy.protein + energy.carb + energy.fat;
-  const pct = k => (eSum ? Math.round((energy[k] / eSum) * 100) : 0);
-  const g = v => (v > 0 && v < 1 ? '<1 g' : `${fmt(v)} g`);
-  const n = result.items.length;
-  const macros = [['protein', 'P', 'Protein'], ['carb', 'C', 'Carbohydrate'], ['fat', 'F', 'Fat']];
-  return `<section class="totals" aria-label="Meal total">
-    <div class="tot-head"><span>Meal total</span><span class="muted">${n} food${n === 1 ? '' : 's'} · ${fmt(grams)} g</span></div>
-    <div class="tot-kcal"><b>${fmt(t.kcal)}</b> kcal</div>
-    <div class="split" role="img" aria-label="Calories from protein ${pct('protein')}%, carbohydrate ${pct('carb')}%, fat ${pct('fat')}%">${macros.filter(([k]) => energy[k] > 0).map(([k]) => `<i style="flex-grow:${energy[k].toFixed(1)};background:var(--${k})"></i>`).join('')}</div>
-    <ul class="tot-macros">${macros.map(([k, key, label]) => `<li><span class="mkey" style="background:var(--${k})" aria-hidden="true">${key}</span><span>${label}</span><b>${g(t[k])}</b><span class="pct">${pct(k)}%</span></li>`).join('')}</ul>
-    <dl class="tot-more">
-      <div><dt>Fiber</dt><dd>${g(t.fiber)}</dd></div>
-      <div><dt>Sugars</dt><dd>${g(t.sugar)}</dd></div>
-      <div><dt>Saturated fat</dt><dd>${g(t.satfat)}</dd></div>
-      <div><dt>Sodium</dt><dd>${fmt(t.sodium)} mg</dd></div>
-    </dl>
-  </section>`;
-}
-
 function renderResult(reveal = false) {
   const el = $('result');
   $('capture').hidden = !!result;
@@ -308,11 +261,12 @@ function renderResult(reveal = false) {
         <div><label class="field-label" for="r-title">Meal name</label>
           <input type="text" id="r-title" class="title-input" value="${esc(result.title)}" maxlength="80" placeholder="Salmon, rice and greens"></div>
         <div class="items" id="r-items">${renderItems()}</div>
+        <div id="r-addons">${addonsHtml(result)}</div>
         <button type="button" class="btn btn-tinted btn-sm add-food" id="r-add">+ Add a food</button>
         <div id="r-add-finder"></div>
         ${result.notes || result.usd ? `<p class="ai-notes">${esc(result.notes)}${result.webUnavailable ? ' Web search is turned off for your Anthropic organization, so brand-name foods came from labels or the food databases.' : ''}${result.usd ? ` Analysis cost about ${result.usd < 0.01 ? 'under 1¢' : `${Math.round(result.usd * 100)}¢`} on your Anthropic account.` : ''}</p>` : ''}
       </div>
-      <div id="r-totals">${totalsHtml()}</div>
+      <div id="r-totals">${totalsHtml(result)}</div>
       <div class="result-actions">
         <label class="visually-hidden" for="r-meal">Meal</label>
         <select id="r-meal" class="flow-primary">${mealOptions()}</select>
@@ -332,7 +286,8 @@ function renderItems() {
 
 function refreshItems() {
   $('r-items').innerHTML = renderItems();
-  $('r-totals').innerHTML = totalsHtml();
+  $('r-addons').innerHTML = addonsHtml(result);
+  $('r-totals').innerHTML = totalsHtml(result);
   renderBar();
 }
 
@@ -342,7 +297,10 @@ function refreshRow(row) {
   const kIn = row.querySelector('.kcal-in');
   if (document.activeElement !== kIn) kIn.value = Math.round(n.kcal);
   row.querySelector('.macros-line').textContent = macroLine(n);
-  $('r-totals').innerHTML = totalsHtml();
+  row.querySelector('.item-warns').innerHTML = warningsHtml(it);
+  const range = row.querySelector('.item-range');
+  if (range) range.textContent = it.range ? `Likely ${fmt(it.grams * it.range[0])}–${fmt(it.grams * it.range[1])} g` : '';
+  $('r-totals').innerHTML = totalsHtml(result);
   renderBar();
 }
 
@@ -397,11 +355,16 @@ function wireResult() {
     else if (t.classList.contains('grams')) {
       const g = Number(t.value);
       if (g > 0) {
-        result.items[row.dataset.i].grams = clampG(g);
-        const n = itemNutrients(result.items[row.dataset.i]);
+        // A typed weight is taken as measured: Claude's range no longer applies.
+        const it = result.items[row.dataset.i];
+        it.grams = clampG(g);
+        it.range = null;
+        const n = itemNutrients(it);
         row.querySelector('.kcal-in').value = Math.round(n.kcal);
         row.querySelector('.macros-line').textContent = macroLine(n);
-        $('r-totals').innerHTML = totalsHtml();
+        row.querySelector('.item-warns').innerHTML = warningsHtml(it);
+        row.querySelector('.item-range')?.remove();
+        $('r-totals').innerHTML = totalsHtml(result);
         renderBar();
       }
     } else if (t.classList.contains('finder-q')) t.closest('.finder').querySelector('.finder-list').innerHTML = finderList(t.value);
@@ -417,6 +380,7 @@ function wireResult() {
     }
     else if (t.classList.contains('portion') && t.value) {
       result.items[row.dataset.i].grams = clampG(Number(t.value));
+      result.items[row.dataset.i].range = null;
       t.value = '';
       refreshRow(row);
     } else if (t.classList.contains('grams')) t.value = result.items[row.dataset.i].grams;
@@ -449,6 +413,11 @@ function wireResult() {
         $('r-add-finder').innerHTML = '';
       }
       refreshItems();
+    } else if (t.dataset.addon != null) {
+      // "Did you add…?" answered yes: the suggested food joins the meal.
+      const [a] = result.addons.splice(Number(t.dataset.addon), 1);
+      if (a) result.items.push({ label: a.label, fdcId: a.fdcId, grams: a.grams, basis: a.question.replace(/\?$/, ': yes'), confidence: 'medium' });
+      refreshItems();
     } else if (t.id === 'r-discard') {
       resetIdle();
     } else if (t.id === 'r-log') {
@@ -476,10 +445,13 @@ async function logResult(btn) {
     title: (result.title || items.slice(0, 3).map(i => i.label).join(', ')).trim().slice(0, 80),
     thumb: result.thumb || null, source: result.source, items, totals,
   };
+  const reviewed = result.items.slice();
   btn.disabled = true;
   try {
     await opts.onLog(entry);
     opts.toast(`Logged ${MEALS[entry.meal].toLowerCase()}: ${fmt(totals.kcal)} kcal`);
+    // How the weights were corrected teaches future estimates (see accuracy.js).
+    recordCorrections(opts.store(), reviewed);
     resetIdle();
   } catch (e) {
     opts.toast(opts.saveError(e));

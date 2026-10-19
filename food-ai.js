@@ -4,6 +4,7 @@
 // restaurant items, carry their own per-100 g values plus where they came from: a web page (cited), the
 // package label in the photo, or Claude's knowledge of the published label (marked unverified).
 import { getFood, search, getPortions, datasetName, foodUrl, REGIONS } from './usda.js';
+import { resolveAddons } from './accuracy.js';
 
 const clampG = g => Math.min(3000, Math.max(1, Math.round(g)));
 const ORIGIN_CHIP = { web: 'Web', label: 'Label', knowledge: 'Claude', stated: 'You' };
@@ -15,7 +16,8 @@ const ITEM_SHAPE = `{"label": string, "source": "database" | "web" | "label" | "
   "per_serving": null or {"serving_label": string, "serving_g": number, "kcal": number, "protein_g": number, "carbs_g": number, "fat_g": number, "fiber_g": number or null, "sugar_g": number or null, "sodium_mg": number or null, "satfat_g": number or null},
   "source_url": string or null, "source_title": string or null,
   "stated": null or {"kcal": number or null, "protein_g": number or null, "carbs_g": number or null, "fat_g": number or null},
-  "grams": number, "basis": string, "confidence": "high" | "medium" | "low"}`;
+  "grams": number, "grams_low": number, "grams_high": number, "basis": string, "confidence": "high" | "medium" | "low"}`;
+const ADDON_SHAPE = `{"question": string, "label": string, "food_id": string or null, "query": string, "grams": number}`;
 
 // The person's own words come first: stated numbers, amounts, brands and preparation override
 // the photo and every database.
@@ -48,17 +50,28 @@ function sourceRules({ tools, web, branded }) {
 function outputRules(submit) {
   return submit
     ? 'When finished, call submit_meal once with the result instead of replying in text.'
-    : `Reply with only JSON: {"title": "short meal name, 2 to 6 words", "items": [ ${ITEM_SHAPE} ], "notes": "one or two sentences on what is uncertain"}. If there is no food or drink, reply {"title": "", "items": [], "notes": "what you saw instead"}.`;
+    : `Reply with only JSON: {"title": "short meal name, 2 to 6 words", "items": [ ${ITEM_SHAPE} ], "addons": [ ${ADDON_SHAPE} ], "notes": "one or two sentences on what is uncertain"}. If there is no food or drink, reply {"title": "", "items": [], "addons": [], "notes": "what you saw instead"}.`;
 }
 
-export function buildPrompt(note, hasPhoto, caps) {
+// The steps that most often go wrong in photo estimates, spelled out.
+const PORTION_RULES = [
+  'How to estimate the grams eaten, the biggest source of error:',
+  '- Find a scale reference in the photo first (plate, bowl, cutlery, a hand, a can, packaging) and say which you used in basis.',
+  '- Estimate each food\'s volume or dimensions against it, then convert to grams with a typical density for that food in that state: about 0.6–0.8 g/ml for cooked rice, pasta and grains, about 1.0 for meat, fish, soups and drinks, about 0.3–0.5 for leafy salad, about 0.25 for popcorn or chips.',
+  '- Weigh foods in the state of the entry you match: cooked weight with a cooked or as-eaten entry. Never pair a dry, raw or uncooked grain, pasta, oat or legume entry with a cooked portion (dry rice has about three times the calories of cooked).',
+  '- Leave out bones, peels, shells and packaging; count only what was eaten when a note says some was left.',
+  '- Set grams_low and grams_high to bracket your estimate honestly: about ±15% when the amount is clear (a packaged serving, a whole fruit), ±25–40% for piled or mixed foods.',
+  'Calories people miss most: cooking oil and butter (pan-fried, sautéed and restaurant foods usually carry 1–2 tablespoons a plate; fries and fried foods absorb oil, so match fried entries), dressings, sauces and spreads, cheese, and milk, sugar or syrup in drinks. Add them as items when you can see them or the description says so. When one is likely but you can\'t tell, add it to "addons" instead (at most 3): a short yes/no question such as "Cooked in oil?", the food to add, its food_id or query, and typical grams (1 tablespoon of oil is about 14 g).',
+].join('\n');
+
+export function buildPrompt(note, hasPhoto, caps, context = '') {
   return [
     'You are helping a person log a meal in a calorie tracker. Every nutrient number must come from a stated source (a national food composition database, a nutrition label, or a cited web page), so identify the foods and their sources and estimate the grams eaten. Never make up nutrient values.',
     hasPhoto ? 'The attached photo shows the meal.' : 'There is no photo. Work from the description below.',
     note ? `The person's description of what they ate:\n"""${note}"""\n\n${READ_FIRST}` : '',
     '1. List each distinct food or drink. Split plates into components you can weigh, but keep a composite dish whole when it is likely listed as one (pizza slice, burrito, sandwich, a restaurant menu item). Include visible added fats, sauces and drinks. Note any brand names on packaging or in the note.',
     `2. Find each food's nutrition source:\n${sourceRules(caps)}`,
-    '3. Estimate the edible grams eaten. Use scale cues (a dinner plate is about 26 cm across, a fork about 19 cm, a standard can 355 ml), the portion weights from searches, and for packaged foods the serving weight times the servings eaten. Leave out bones, peels and packaging.',
+    `3. Estimate the edible grams eaten. Typical sizes when nothing else is known: a dinner plate is about 26 cm across, a fork about 19 cm, a standard can 355 ml. Use the portion weights from searches, and for packaged foods the serving weight times the servings eaten.${context ? `\n${context}` : ''}\n${PORTION_RULES}`,
     `4. ${outputRules(caps.submit)}`,
   ].filter(Boolean).join('\n\n');
 }
@@ -140,9 +153,12 @@ export function normalize(reply) {
     if (!it || typeof it !== 'object') return null;
     const label = String(it.label || '').trim().slice(0, 80);
     const g = Number(it.grams);
+    const grams = clampG(g > 0 ? g : 100), lo = Number(it.grams_low), hi = Number(it.grams_high);
     const base = {
-      grams: clampG(g > 0 ? g : 100), basis: String(it.basis || '').slice(0, 140),
+      grams, basis: String(it.basis || '').slice(0, 160),
       confidence: ['high', 'medium', 'low'].includes(it.confidence) ? it.confidence : 'medium',
+      // Claude's honest bracket around the weight, kept as ratios so it scales with edits.
+      range: lo > 0 && hi > 0 && lo <= grams && hi >= grams && hi > lo ? [Math.max(0.3, lo / grams), Math.min(3, hi / grams)] : null,
     };
     const stated = it.stated && typeof it.stated === 'object' ? it.stated : null;
     const custom = toCustom(it);
@@ -154,7 +170,7 @@ export function normalize(reply) {
     return applyStated({ ...base, label: label || food.desc, fdcId: food.id }, stated);
   }).filter(Boolean);
   const title = String(raw.title || '').trim().slice(0, 80) || items.slice(0, 3).map(i => i.label).join(', ');
-  return { title, items, notes: String(raw.notes || '').slice(0, 400) };
+  return { title, items, addons: resolveAddons(raw.addons), notes: String(raw.notes || '').slice(0, 400) };
 }
 
 // Numbers the person gave (in their description, or typed into the editor) for the amount eaten.
@@ -191,6 +207,7 @@ export function applyStated(item, stated) {
     ...item,
     fdcId: null,
     confidence: 'high',
+    range: null,
     custom: {
       origin: 'stated', brand: item.custom?.brand || '', url: ref?.href || null, urlTitle: ref?.text || '',
       per100, base100: base, statedGrams: g,

@@ -172,6 +172,7 @@
         <div class="stack">
           <div class="card">
             <div class="card-head"><h2 id="lift-session-h">Session</h2></div>
+            <div id="rest-timer" class="rest-bar" hidden></div>
             <div id="lift-session"></div>
             <div class="add-ex">
               <label class="visually-hidden" for="lift-new">Exercise to add</label>
@@ -180,8 +181,22 @@
             </div>
             <datalist id="lift-names"></datalist>
           </div>
+          <div class="card" id="lift-cal">
+            <div class="card-head"><h2>Calendar</h2><div class="seg seg-inline" id="cal-mode" role="group" aria-label="Calendar view"></div></div>
+            <div class="cal-nav">
+              <button id="cal-prev" class="icon-btn" type="button" aria-label="Earlier"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg></button>
+              <span id="cal-title" aria-live="polite"></span>
+              <button id="cal-next" class="icon-btn" type="button" aria-label="Later"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg></button>
+            </div>
+            <div id="cal-body"></div>
+            <div id="cal-muscles"></div>
+          </div>
         </div>
         <div class="stack">
+          <div class="card" id="split">
+            <div class="card-head"><h2>Training split</h2><button type="button" class="link-btn" id="split-edit" hidden>Edit split</button></div>
+            <div id="split-body"></div>
+          </div>
           <div class="card">
             <div class="card-head"><h2>Progress</h2></div>
             <div id="lift-progress"></div>
@@ -265,6 +280,21 @@
         </div>
         <div class="stack">
           <div class="card" id="ai-settings"></div>
+          <div class="card" id="accuracy">
+            <div class="card-head"><h2>Photo estimates</h2></div>
+            <p class="fine" style="margin-bottom:12px">Claude sizes portions against things in your photo. Telling it the size of your own dishes makes that more accurate. Leave any box blank.</p>
+            <form id="acc-form" class="settings-form" novalidate>
+              <div class="quick-row">
+                <div class="field"><label for="acc-plate">Dinner plate</label><div class="field-row"><input id="acc-plate" type="number" inputmode="decimal" step="any" placeholder="across"><span class="u" id="acc-plate-u">cm</span></div></div>
+                <div class="field"><label for="acc-bowl">Bowl</label><div class="field-row"><input id="acc-bowl" type="number" inputmode="decimal" step="any"><span class="u" id="acc-bowl-u">ml</span></div></div>
+                <div class="field"><label for="acc-glass">Glass</label><div class="field-row"><input id="acc-glass" type="number" inputmode="decimal" step="any"><span class="u" id="acc-glass-u">ml</span></div></div>
+              </div>
+              <label class="switch-row" for="acc-thorough"><span><b>Thorough analysis</b><span class="hint">Claude reasons longer about each photo, and on claude.ai the most capable model answers. Slower, and uses more of your Claude plan or API budget.</span></span><input type="checkbox" id="acc-thorough" role="switch"></label>
+              <p id="acc-learned" class="fine" aria-live="polite"></p>
+              <p id="acc-error" class="form-error" role="alert" hidden></p>
+              <div class="backup-actions"><button class="btn btn-primary btn-sm" type="submit">Save</button><button type="button" class="btn btn-plain btn-sm" id="acc-reset" hidden>Forget learned portions</button></div>
+            </form>
+          </div>
           <div class="card" id="backup-card" hidden></div>
           <div class="card" id="sources">
             <div class="card-head"><h2>About</h2></div>
@@ -283,6 +313,7 @@
                 <li>Institute of Medicine, <i>Dietary Reference Intakes for Energy, Carbohydrate, Fiber, Fat, Fatty Acids, Cholesterol, Protein, and Amino Acids</i>, 2005.</li>
                 <li>Weight trend: exponentially smoothed average, 10% per day, after Walker J, <i>The Hacker's Diet</i> (1991). Energy balance uses about 7,700 kcal per kg (Hall KD, <i>Int J Obes</i> 2008;32:573–6).</li>
                 <li>Estimated one-rep max: Epley B, <i>Poundage Chart</i>, Boyd Epley Workout, 1985: weight × (1 + reps / 30).</li>
+                <li>Weekly sets per muscle: Schoenfeld BJ, Ogborn D, Krieger JW. <i>J Sports Sci</i> 2017;35:1073–82 (dose-response of weekly sets and muscle growth).</li>
               </ol>
             </details>
           </div>

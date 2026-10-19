@@ -28,7 +28,7 @@ function tx(db, mode, fn) {
 }
 
 export async function openStore(onChange) {
-  const state = { profile: null, weights: null, prefs: null, favorites: null, days: {}, lifts: {} };
+  const state = { profile: null, weights: null, prefs: null, favorites: null, plan: null, days: {}, lifts: {} };
   let db = null;
   try {
     db = await openDb();
@@ -41,6 +41,7 @@ export async function openStore(onChange) {
       else if (k === 'weights') state.weights = values[i];
       else if (k === 'prefs') state.prefs = values[i];
       else if (k === 'favorites') state.favorites = values[i];
+      else if (k === 'plan') state.plan = values[i];
       else if (String(k).startsWith(DAY)) state.days[k.slice(DAY.length)] = values[i];
       else if (String(k).startsWith(LIFT)) state.lifts[k.slice(LIFT.length)] = values[i];
     });
@@ -67,6 +68,7 @@ export async function openStore(onChange) {
     get lifts() { return state.lifts; },
     get prefs() { return state.prefs; },
     get favorites() { return state.favorites; },
+    get plan() { return state.plan; },
     async ensureDay() {},
     saveDay(date, doc) {
       return save(DAY + date, doc.entries.length ? doc : null, v => { if (v) state.days[date] = v; else delete state.days[date]; });
@@ -75,12 +77,13 @@ export async function openStore(onChange) {
     saveWeights(doc) { return save('weights', doc, v => { state.weights = v; }); },
     savePrefs(p) { return save('prefs', p, v => { state.prefs = v; }); },
     saveFavorites(doc) { return save('favorites', doc, v => { state.favorites = v; }); },
+    savePlan(doc) { return save('plan', doc, v => { state.plan = v; }); },
     saveLift(date, doc) {
       return save(LIFT + date, doc.exercises.length ? doc : null, v => { if (v) state.lifts[date] = v; else delete state.lifts[date]; });
     },
 
     exportData() {
-      return { app: 'plate-ledger', version: 1, exportedAt: new Date().toISOString(), profile: state.profile, weights: state.weights, prefs: state.prefs, favorites: state.favorites, days: state.days, lifts: state.lifts };
+      return { app: 'plate-ledger', version: 1, exportedAt: new Date().toISOString(), profile: state.profile, weights: state.weights, prefs: state.prefs, favorites: state.favorites, plan: state.plan, days: state.days, lifts: state.lifts };
     },
     // Replaces everything with a backup made by exportData().
     async importData(data) {
@@ -91,6 +94,7 @@ export async function openStore(onChange) {
         if (data.weights) s.put(data.weights, 'weights');
         if (data.prefs) s.put(data.prefs, 'prefs');
         if (data.favorites) s.put(data.favorites, 'favorites');
+        if (data.plan) s.put(data.plan, 'plan');
         for (const [d, doc] of Object.entries(data.days || {})) s.put(doc, DAY + d);
         for (const [d, doc] of Object.entries(data.lifts || {})) s.put(doc, LIFT + d);
       });
@@ -98,6 +102,7 @@ export async function openStore(onChange) {
       state.weights = data.weights || null;
       state.prefs = data.prefs || null;
       state.favorites = data.favorites || null;
+      state.plan = data.plan || null;
       state.days = { ...(data.days || {}) };
       state.lifts = { ...(data.lifts || {}) };
       onChange({});
@@ -128,7 +133,7 @@ export function mergeBackup(cur, data) {
   const favs = new Map((data.favorites?.items || []).map(f => [key({ name: f.label }), f]));
   for (const f of cur.favorites?.items || []) favs.set(key({ name: f.label }), f);
   const favorites = favs.size ? { items: [...favs.values()] } : null;
-  return { ...data, profile: cur.profile || data.profile || null, prefs: cur.prefs || data.prefs || null, weights, favorites, days, lifts };
+  return { ...data, profile: cur.profile || data.profile || null, prefs: cur.prefs || data.prefs || null, plan: cur.plan || data.plan || null, weights, favorites, days, lifts };
 }
 
 // Checks a parsed backup file before anything is replaced.
@@ -140,6 +145,7 @@ export function validateBackup(data) {
   }
   if (data.weights && !Array.isArray(data.weights.entries)) return 'The backup’s weigh-ins are damaged.';
   if (data.favorites && !Array.isArray(data.favorites.items)) return 'The backup’s favorites are damaged.';
+  if (data.plan && !Array.isArray(data.plan.days)) return 'The backup’s training split is damaged.';
   for (const [d, doc] of Object.entries(data.lifts || {})) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || !Array.isArray(doc?.exercises)) return `The backup’s lifting session for ${d} is damaged.`;
   }

@@ -52,16 +52,28 @@ const SUBMIT_SCHEMA = {
           source_title: nullable({ type: 'string' }),
           stated: nullable(STATED),
           grams: { type: 'number' },
+          grams_low: { type: 'number', description: 'Low end of the honest range for grams eaten' },
+          grams_high: { type: 'number', description: 'High end of the honest range for grams eaten' },
           basis: { type: 'string' },
           confidence: { type: 'string', enum: ['high', 'medium', 'low'] },
         },
-        required: ['label', 'source', 'food_id', 'query', 'brand', 'per_serving', 'source_url', 'source_title', 'stated', 'grams', 'basis', 'confidence'],
+        required: ['label', 'source', 'food_id', 'query', 'brand', 'per_serving', 'source_url', 'source_title', 'stated', 'grams', 'grams_low', 'grams_high', 'basis', 'confidence'],
+        additionalProperties: false,
+      },
+    },
+    addons: {
+      type: 'array',
+      description: 'Up to 3 likely but unseen additions, such as cooking oil, each as a yes/no question',
+      items: {
+        type: 'object',
+        properties: { question: { type: 'string' }, label: { type: 'string' }, food_id: nullable({ type: 'string' }), query: { type: 'string' }, grams: { type: 'number' } },
+        required: ['question', 'label', 'food_id', 'query', 'grams'],
         additionalProperties: false,
       },
     },
     notes: { type: 'string' },
   },
-  required: ['title', 'items', 'notes'],
+  required: ['title', 'items', 'addons', 'notes'],
   additionalProperties: false,
 };
 
@@ -133,7 +145,7 @@ async function run(apiKey, params, signal, onStep) {
  * Runs one analysis. `tools` are page tools, each {name, description, inputSchema, execute(input)}.
  * With `web`, Claude may also search the web. Resolves {reply, usd, webUnavailable}; rejects {code, message}.
  */
-export async function analyzeMeal({ apiKey, model, prompt, imageBase64, tools, signal, web = true, onStep }) {
+export async function analyzeMeal({ apiKey, model, prompt, imageBase64, tools, signal, web = true, onStep, effort = 'medium' }) {
   const m = modelFor(model);
   const pageTools = tools.map(t => betaTool({
     name: t.name,
@@ -157,7 +169,7 @@ export async function analyzeMeal({ apiKey, model, prompt, imageBase64, tools, s
     model: m.id,
     max_tokens: 16000,
     cache_control: { type: 'ephemeral' },
-    output_config: { effort: 'medium' },
+    output_config: { effort },
     tools: [...pageTools, submitTool, ...(web ? webTools(m) : [])],
     max_iterations: 10,
     messages: [{ role: 'user', content }],
