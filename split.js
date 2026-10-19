@@ -1,12 +1,14 @@
 // Training split: named workout days (Push, Pull, Legs…) with their planned exercises, sets and rep
 // ranges, and which day falls on each weekday. Saved as one `plan` document per person:
 // {template, days: [{id, name, exercises: [{name, sets, reps}]}], week: [day id or null, Monday first]}.
-// Exercises keep the order set here, which is the order a session started from the plan lists them.
+// Exercises keep the order set here (drag them to reorder), which is the order a session started
+// from the plan lists them.
+import { sortable } from './drag-sort.js';
+
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const ICON_X = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>';
-const ICON_UP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 15 6-6 6 6"/></svg>';
-const ICON_DOWN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>';
+const ICON_GRIP = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg>';
 export const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const keyOf = name => String(name || '').trim().toLowerCase();
 
@@ -84,7 +86,19 @@ export function initSplit(c) {
   el.addEventListener('click', onClick);
   el.addEventListener('input', onInput);
   el.addEventListener('change', onInput);
+  sortable(el, { item: '.sd-ex', handle: '.sd-grip', onMove: moveExercise });
   return { render, flush };
+}
+
+// A dragged exercise lands at its new place in that day's list.
+function moveExercise(itemEl, from, to) {
+  const di = itemEl.closest('.split-ed-day')?.dataset.d, d = draft?.days[Number(di)];
+  if (!d) return null;
+  const [x] = d.exercises.splice(from, 1);
+  d.exercises.splice(to, 0, x);
+  $('split-body').innerHTML = editorHtml();
+  scheduleSave();
+  return $('split-body').querySelector(`.split-ed-day[data-d="${di}"] .sd-ex[data-x="${to}"]`);
 }
 
 export function render() {
@@ -118,13 +132,10 @@ function editorHtml() {
     ${p.days.map((d, di) => `<section class="split-ed-day" data-d="${di}">
       <div class="split-ed-head"><input type="text" class="sd-name" value="${esc(d.name)}" maxlength="30" aria-label="Workout day name"><button type="button" class="link-btn danger" data-act="rm-day">Remove day</button></div>
       ${d.exercises.map((x, xi) => `<div class="sd-ex" data-x="${xi}">
+        <button type="button" class="sd-grip" aria-label="Reorder ${esc(x.name || 'exercise')}: drag, or use the up and down arrow keys">${ICON_GRIP}</button>
         <input type="text" class="sd-x-name" list="lift-names" value="${esc(x.name)}" maxlength="60" placeholder="Exercise" aria-label="Exercise">
         <input type="number" class="sd-x-sets" inputmode="numeric" min="1" max="10" value="${x.sets}" aria-label="Sets"><span class="u">×</span>
         <input type="text" class="sd-x-reps" value="${esc(x.reps)}" maxlength="12" inputmode="text" aria-label="Rep range, such as 8–12">
-        <span class="sd-move">
-          <button type="button" class="move-btn" data-act="up" ${xi === 0 ? 'disabled' : ''} aria-label="Move ${esc(x.name || 'exercise')} up">${ICON_UP}</button>
-          <button type="button" class="move-btn" data-act="down" ${xi === d.exercises.length - 1 ? 'disabled' : ''} aria-label="Move ${esc(x.name || 'exercise')} down">${ICON_DOWN}</button>
-        </span>
         <button type="button" class="remove-btn" data-act="rm-ex" aria-label="Remove ${esc(x.name || 'exercise')}">${ICON_X}</button>
       </div>`).join('')}
       <button type="button" class="btn btn-plain btn-sm" data-act="add-ex">+ Exercise</button>
@@ -178,19 +189,7 @@ async function onClick(e) {
     draft.days.splice(Number(dEl.dataset.d), 1);
   } else if (act === 'add-ex') d.exercises.push(T('', 3, '8–12'));
   else if (act === 'rm-ex') d.exercises.splice(Number(b.closest('.sd-ex').dataset.x), 1);
-  else if (act === 'up' || act === 'down') {
-    const i = Number(b.closest('.sd-ex').dataset.x), j = act === 'up' ? i - 1 : i + 1;
-    if (j < 0 || j >= d.exercises.length) return;
-    [d.exercises[i], d.exercises[j]] = [d.exercises[j], d.exercises[i]];
-    $('split-body').innerHTML = editorHtml();
-    // Follow the moved exercise, so repeated taps keep moving it (falls back to the other arrow at an end).
-    const row = $('split-body').querySelector(`.split-ed-day[data-d="${dEl.dataset.d}"] .sd-ex[data-x="${j}"]`);
-    const btn = row?.querySelector(`[data-act="${act}"]:not(:disabled)`) || row?.querySelector('.move-btn:not(:disabled)');
-    btn?.focus({ preventScroll: true });
-    row?.scrollIntoView({ block: 'nearest' });
-    scheduleSave();
-    return;
-  } else return;
+  else return;
   $('split-body').innerHTML = editorHtml();
   if (act === 'add-ex') $('split-body').querySelector(`.split-ed-day[data-d="${dEl.dataset.d}"] .sd-ex:last-of-type .sd-x-name`)?.focus({ preventScroll: true });
   scheduleSave();
