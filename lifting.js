@@ -8,6 +8,7 @@ import { bodyweightSeries } from './weight.js';
 import { initSplit, startEditing, normalizePlan, plannedFor, dayById } from './split.js';
 import { initCalendar } from './lift-calendar.js';
 import { initRestTimer, startRest, restLabel } from './rest-timer.js';
+import { stats, wins, initWins } from './improvements.js';
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -46,7 +47,7 @@ export function normalizeSession(date, raw) {
   return day ? { date, exercises, day } : { date, exercises };
 }
 
-let ctx, draft = null, loadedJSON = '', dirty = false, saveTimer = null, pick = null, range = 91, charts = null, split = null, calendar = null;
+let ctx, draft = null, loadedJSON = '', dirty = false, saveTimer = null, pick = null, range = 91, charts = null, split = null, calendar = null, winsCard = null;
 
 function sessions() {
   const all = ctx.store()?.lifts || {};
@@ -170,6 +171,7 @@ export function initLifting(c) {
   const sub = { ...c, sessions, onPlanChange: () => render() };
   split = initSplit(sub);
   calendar = initCalendar(sub);
+  winsCard = initWins({ ...sub, wfmt });
   initRestTimer(c);
   $('split-edit').addEventListener('click', () => startEditing());
   return { render, flush: flushAll };
@@ -190,6 +192,7 @@ export function render() {
   renderProgress();
   split.render();
   calendar.render();
+  winsCard.render();
 }
 
 /* ---------- session ---------- */
@@ -220,9 +223,14 @@ function priorBest(key, before) {
 
 function bestText(ex) {
   const best = exBest(ex);
-  if (!best) return '';
-  const prior = priorBest(keyOf(ex.name), draft.date);
-  return prior != null && best > prior + 0.01 ? `New est. 1RM record: ${wfmt(best)}` : `Est. 1RM ${wfmt(best)}`;
+  return best ? `Est. 1RM ${wfmt(best)}` : '';
+}
+
+// The strongest improvement on the last time this exercise was done, as the sets are typed.
+function winText(ex) {
+  const key = keyOf(ex.name), last = lastSessionWith(key, draft.date);
+  const w = wins(stats(ex.sets), stats(last?.ex.sets), priorBest(key, draft.date), wfmt)[0];
+  return w ? `▲ ${w.short}${w.kind === 'record' ? '' : ' vs last time'}` : '';
 }
 
 // The plan's sets and reps for this exercise on this session's split day, if any.
@@ -244,10 +252,11 @@ function exHtml(ex, i) {
     ${pe ? `<p class="lx-plan">Plan: ${pe.sets} × ${esc(pe.reps)}</p>` : ''}
     ${last ? `<p class="lx-last">Last time, ${esc(dateShort(last.date))}: ${esc(setsSummary(last.ex.sets))}</p>` : ''}
     <div class="sets">${ex.sets.map((s, j) => setHtml(s, j, lastSets[j] || lastSets[lastSets.length - 1] || ex.sets[j - 1])).join('')}</div>
+    <p class="lx-win" aria-live="polite">${esc(winText(ex))}</p>
     <div class="lx-foot">
       <button type="button" class="btn btn-plain btn-sm" data-act="add-set">+ Add set</button>
       <button type="button" class="btn btn-plain btn-sm" data-act="rest">${restLabel()}</button>
-      <span class="lx-best${best.startsWith('New') ? ' pr' : ''}">${esc(best)}</span>
+      <span class="lx-best">${esc(best)}</span>
     </div>
   </div>`;
 }
@@ -286,12 +295,12 @@ function onInput(e) {
     const v = Number(t.value);
     if (t.classList.contains('set-w')) set.kg = v > 0 ? Math.round(fromU(v) * 100) / 100 : 0;
     if (t.classList.contains('set-r')) set.reps = v > 0 ? Math.min(500, Math.round(v)) : 0;
-    const best = bestText(ex), bestEl = xEl.querySelector('.lx-best');
-    bestEl.textContent = best;
-    bestEl.classList.toggle('pr', best.startsWith('New'));
+    xEl.querySelector('.lx-best').textContent = bestText(ex);
+    xEl.querySelector('.lx-win').textContent = winText(ex);
   }
   const total = $('lift-session').querySelector('.lift-total');
   if (total) total.textContent = totalLine();
+  winsCard?.render();
   scheduleSave();
 }
 

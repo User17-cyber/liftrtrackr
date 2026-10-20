@@ -387,7 +387,18 @@ body[data-quick] #actionbar { display: none !important; }
 .lx-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
 .lx-foot .lx-best { margin-left: auto; }
 .lx-best { color: var(--muted); font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
-.lx-best.pr { color: var(--accent); }
+.lx-win { margin: 0; color: var(--accent); font-size: 14px; font-weight: 700; }
+.lx-win:empty { display: none; }
+.wins-sum { margin: 0 0 10px; font-weight: 600; }
+.wins { display: grid; gap: 8px; margin: 0 0 8px; padding: 0; list-style: none; }
+.win { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 12px; background: var(--fill); }
+.win-top { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.win-badge { padding: 3px 9px; border-radius: 999px; background: var(--accent-soft); color: var(--ink); font-size: 12px; font-weight: 700; white-space: nowrap; }
+.win-record .win-badge { background: var(--accent); color: var(--on-accent); }
+.win-new .win-badge { background: var(--surface); color: var(--muted); }
+.win-main { display: grid; gap: 2px; min-width: 0; }
+.win-main span { color: var(--muted); font-size: 14px; }
+.win-delta { color: var(--accent); font-family: var(--font-display); font-size: 18px; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .lx-plan { margin: 0; color: var(--accent); font-size: 14px; font-weight: 600; }
 .start-days { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
 .day-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; margin-bottom: 12px; }
