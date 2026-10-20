@@ -1,7 +1,7 @@
 // "Since last time": what improved in a workout compared with the previous time each exercise was
-// done. For each exercise the strongest win is shown: a new all-time estimated 1RM, a heavier top
-// set, more reps at the same top weight, a higher estimated 1RM, or more volume (weight × reps; for
-// bodyweight exercises, more reps). The card covers today's session as it's logged, or else the most
+// done. Every improvement counts, however small: a new all-time estimated 1RM, a heavier top set,
+// even one more rep at a weight lifted both times, a higher estimated 1RM, or more volume
+// (weight × reps; for bodyweight exercises, more reps). The strongest leads. The card covers today's session as it's logged, or else the most
 // recent workout, and compares total volume with the previous session of the same split day.
 import { e1rm } from './lifting.js';
 import { normalizePlan, sessionDay } from './split.js';
@@ -12,19 +12,23 @@ const keyOf = name => String(name || '').trim().toLowerCase();
 const dateOf = s => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); };
 const dateShort = s => dateOf(s).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
 const pct = (a, b) => Math.round(((a - b) / b) * 100);
+const up = (a, b) => (pct(a, b) >= 1 ? `+${pct(a, b)}%` : '+<1%');
+const reps = n => `${n} rep${n === 1 ? '' : 's'}`;
+// Total reps done at each weight.
+const repsByWeight = st => st.sets.reduce((m, x) => m.set(Math.round(x.kg * 100) / 100, (m.get(Math.round(x.kg * 100) / 100) || 0) + x.reps), new Map());
 
 // Figures for one exercise's logged sets (null if none). The top set is the heaviest, most reps on ties.
 export function stats(sets) {
   const s = (sets || []).filter(x => x.reps > 0);
   if (!s.length) return null;
-  let top = s[0], best = null, volume = 0, reps = 0, maxReps = 0;
+  let top = s[0], best = null, volume = 0, total = 0, maxReps = 0;
   for (const x of s) {
     if (x.kg > top.kg || (x.kg === top.kg && x.reps > top.reps)) top = x;
     const e = e1rm(x.kg, x.reps);
     if (e != null && (best == null || e > best)) best = e;
-    volume += x.kg * x.reps; reps += x.reps; maxReps = Math.max(maxReps, x.reps);
+    volume += x.kg * x.reps; total += x.reps; maxReps = Math.max(maxReps, x.reps);
   }
-  return { top, best, volume, reps, maxReps };
+  return { top, best, volume, reps: total, maxReps, sets: s };
 }
 
 // Improvements of `cur` over `prev` (both from stats()), strongest first. `record` is the best
@@ -32,16 +36,25 @@ export function stats(sets) {
 export function wins(cur, prev, record, w) {
   if (!cur || !prev) return [];
   const out = [], weighted = cur.top.kg > 0 || prev.top.kg > 0;
-  if (cur.best != null && record != null && cur.best > record + 0.01) out.push({ kind: 'record', badge: 'Record', short: `New est. 1RM record`, delta: `+${w(cur.best - record)}`, detail: `Est. 1RM ${w(record)} → ${w(cur.best)}` });
+  if (cur.best != null && record != null && cur.best > record + 0.01) out.push({ kind: 'record', badge: 'Record', short: 'New est. 1RM record', delta: `+${w(cur.best - record)}`, detail: `Est. 1RM ${w(record)} → ${w(cur.best)}` });
   if (weighted) {
     if (cur.top.kg > prev.top.kg + 0.01) out.push({ kind: 'weight', badge: 'Heavier', short: `+${w(cur.top.kg - prev.top.kg)} on your top set`, delta: `+${w(cur.top.kg - prev.top.kg)}`, detail: `${w(prev.top.kg)} × ${prev.top.reps} → ${w(cur.top.kg)} × ${cur.top.reps}` });
-    else if (Math.abs(cur.top.kg - prev.top.kg) < 0.01 && cur.top.reps > prev.top.reps) out.push({ kind: 'reps', badge: 'More reps', short: `+${cur.top.reps - prev.top.reps} rep${cur.top.reps - prev.top.reps === 1 ? '' : 's'} at ${w(cur.top.kg)}`, delta: `+${cur.top.reps - prev.top.reps} reps`, detail: `${w(prev.top.kg)} × ${prev.top.reps} → ${w(cur.top.kg)} × ${cur.top.reps}` });
+    else if (Math.abs(cur.top.kg - prev.top.kg) < 0.01 && cur.top.reps > prev.top.reps) out.push({ kind: 'reps', badge: 'More reps', short: `+${reps(cur.top.reps - prev.top.reps)} at ${w(cur.top.kg)}`, delta: `+${reps(cur.top.reps - prev.top.reps)}`, detail: `${w(prev.top.kg)} × ${prev.top.reps} → ${w(cur.top.kg)} × ${cur.top.reps}` });
+    // More reps at any weight lifted both times: an extra rep on a back-off set counts too.
+    if (!out.some(x => x.kind === 'reps')) {
+      const was = repsByWeight(prev);
+      let gain = null;
+      for (const [kg, r] of repsByWeight(cur)) {
+        const before = was.get(kg), n = r - (before ?? r);
+        if (n > 0 && (!gain || n > gain.n || (n === gain.n && kg > gain.kg))) gain = { kg, n, before, r };
+      }
+      if (gain) out.push({ kind: 'reps', badge: 'More reps', short: `+${reps(gain.n)} at ${w(gain.kg)}`, delta: `+${reps(gain.n)}`, detail: `${gain.before} → ${gain.r} reps at ${w(gain.kg)} in all` });
+    }
     if (cur.best != null && prev.best != null && cur.best > prev.best + 0.01 && !out.length) out.push({ kind: 'strength', badge: 'Stronger', short: `Est. 1RM +${w(cur.best - prev.best)}`, delta: `+${w(cur.best - prev.best)}`, detail: `Est. 1RM ${w(prev.best)} → ${w(cur.best)}` });
-    if (prev.volume > 0 && cur.volume > prev.volume * 1.02) out.push({ kind: 'volume', badge: 'More volume', short: `Volume +${pct(cur.volume, prev.volume)}%`, delta: `+${pct(cur.volume, prev.volume)}%`, detail: `${w(prev.volume)} → ${w(cur.volume)} lifted` });
-  } else if (cur.maxReps > prev.maxReps) {
-    out.push({ kind: 'reps', badge: 'More reps', short: `+${cur.maxReps - prev.maxReps} reps in your best set`, delta: `+${cur.maxReps - prev.maxReps} reps`, detail: `Best set ${prev.maxReps} → ${cur.maxReps} reps` });
-  } else if (cur.reps > prev.reps) {
-    out.push({ kind: 'volume', badge: 'More reps', short: `+${cur.reps - prev.reps} total reps`, delta: `+${cur.reps - prev.reps} reps`, detail: `${prev.reps} → ${cur.reps} reps in all` });
+    if (prev.volume > 0 && cur.volume > prev.volume + 0.01) out.push({ kind: 'volume', badge: 'More volume', short: `Volume ${up(cur.volume, prev.volume)}`, delta: up(cur.volume, prev.volume), detail: `${w(prev.volume)} → ${w(cur.volume)} lifted` });
+  } else {
+    if (cur.maxReps > prev.maxReps) out.push({ kind: 'reps', badge: 'More reps', short: `+${reps(cur.maxReps - prev.maxReps)} in your best set`, delta: `+${reps(cur.maxReps - prev.maxReps)}`, detail: `Best set ${prev.maxReps} → ${cur.maxReps} reps` });
+    if (cur.reps > prev.reps) out.push({ kind: out.length ? 'volume' : 'reps', badge: 'More reps', short: `+${reps(cur.reps - prev.reps)} in all`, delta: `+${reps(cur.reps - prev.reps)}`, detail: `${prev.reps} → ${cur.reps} reps in all` });
   }
   return out;
 }
@@ -90,8 +103,8 @@ export function render() {
   const improved = rows.filter(r => r.win.kind !== 'new').length, counted = improved + level.length;
   const parts = [];
   if (counted) parts.push(`${improved} of ${counted} exercise${counted === 1 ? '' : 's'} improved`);
-  // Only a rise is shown: mid-workout the total is naturally lower than a finished session's.
-  if (v0 > 0 && pct(v1, v0) >= 1) parts.push(`total volume +${pct(v1, v0)}% vs ${same ? `your last ${esc(day.name)} day` : 'your last workout'} (${esc(dateShort(base.date))})`);
+  // Only a rise is shown (any rise): mid-workout the total is naturally lower than a finished session's.
+  if (v0 > 0 && v1 > v0 + 0.01) parts.push(`total volume ${up(v1, v0)} vs ${same ? `your last ${esc(day.name)} day` : 'your last workout'} (${esc(dateShort(base.date))})`);
   card.hidden = false;
   $('lift-wins-when').textContent = cur.date === today ? `Today${day ? ` · ${day.name}` : ''}` : `${dateShort(cur.date)}${day ? ` · ${day.name}` : ''}`;
   $('lift-wins-body').innerHTML = `${parts.length ? `<p class="wins-sum">${parts.join(' · ')}</p>` : ''}

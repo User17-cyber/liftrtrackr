@@ -1,7 +1,7 @@
 // Offline support. The app shell and the food tables are cached on install; same-origin requests
 // are served from cache and refreshed in the background, so a new deploy shows on the next launch.
 // Calls to other sites (api.anthropic.com, api.nal.usda.gov) always go to the network.
-const CACHE = 'plate-ledger-v16';
+const CACHE = 'plate-ledger-v17';
 const SHELL = [
   './', 'index.html', 'styles.css', 'manifest.webmanifest', 'boot-theme.js',
   'app.js', 'analyze.js', 'ai.js', 'platform.js', 'device-settings.js', 'store.js', 'usda.js', 'metabolism.js',
