@@ -8,7 +8,7 @@ import { bodyweightSeries } from './weight.js';
 import { initSplit, startEditing, normalizePlan, plannedFor, dayById } from './split.js';
 import { initCalendar } from './lift-calendar.js';
 import { initRestTimer, startRest, restLabel } from './rest-timer.js';
-import { stats, wins, initWins } from './improvements.js';
+import { stats, wins, initWins, history, withHints } from './improvements.js';
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -214,13 +214,6 @@ function exBest(ex) {
   return best;
 }
 
-// Best estimated 1RM for an exercise in sessions before a date (null if none).
-function priorBest(key, before) {
-  let best = null;
-  for (const p of seriesFor(key)) if (p.date < before && p.best != null && (best == null || p.best > best)) best = p.best;
-  return best;
-}
-
 function bestText(ex) {
   const best = exBest(ex);
   return best ? `Est. 1RM ${wfmt(best)}` : '';
@@ -228,9 +221,11 @@ function bestText(ex) {
 
 // The strongest improvement on the last time this exercise was done, as the sets are typed.
 function winText(ex) {
-  const key = keyOf(ex.name), last = lastSessionWith(key, draft.date);
-  const w = wins(stats(ex.sets), stats(last?.ex.sets), priorBest(key, draft.date), wfmt)[0];
-  return w ? `▲ ${w.short}${w.kind === 'record' ? '' : ' vs last time'}` : '';
+  const h = history(sessions(), keyOf(ex.name), draft.date);
+  const ws = wins(stats(withHints(ex.sets, h.prev?.st.sets)), h.prev?.st, h.record, wfmt);
+  // Up to two wins, so an extra rep still shows beside a record (volume only when it's the only one).
+  const shown = ws.filter(x => x.kind !== 'volume' || ws.length === 1).slice(0, 2);
+  return shown.length ? `▲ ${shown.map(x => x.short).join(' · ')} vs last time` : '';
 }
 
 // The plan's sets and reps for this exercise on this session's split day, if any.
@@ -294,7 +289,12 @@ function onInput(e) {
     const set = ex.sets[Number(t.closest('.set').dataset.s)];
     const v = Number(t.value);
     if (t.classList.contains('set-w')) set.kg = v > 0 ? Math.round(fromU(v) * 100) / 100 : 0;
-    if (t.classList.contains('set-r')) set.reps = v > 0 ? Math.min(500, Math.round(v)) : 0;
+    if (t.classList.contains('set-r')) {
+      set.reps = v > 0 ? Math.min(500, Math.round(v)) : 0;
+      // Reps typed under a hinted weight (grey, from last time) mean that weight: fill it in for real.
+      const wIn = t.closest('.set').querySelector('.set-w'), hint = Number(wIn.placeholder);
+      if (set.reps > 0 && !(set.kg > 0) && wIn.value === '' && hint > 0) { set.kg = Math.round(fromU(hint) * 100) / 100; wIn.value = String(hint); }
+    }
     xEl.querySelector('.lx-best').textContent = bestText(ex);
     xEl.querySelector('.lx-win').textContent = winText(ex);
   }

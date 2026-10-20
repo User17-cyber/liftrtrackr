@@ -64,12 +64,24 @@ export function wins(cur, prev, record, w) {
 let ctx;
 export function initWins(c) { ctx = c; return { render }; }
 
+// A set logged with reps but a blank weight was shown last time's weight (or the weight of the set
+// above) as a hint, and that is what was lifted, so compare with that weight. This mirrors the hint
+// rule in lifting.js: last time's set at the same position, else its last set, else the set above.
+export function withHints(sets, lastSets) {
+  const last = (lastSets || []).filter(s => s.reps > 0), out = [];
+  (sets || []).forEach((s, j) => {
+    const hint = last[j] || last[last.length - 1] || out[j - 1];
+    out.push(s.reps > 0 && !(s.kg > 0) && hint?.kg > 0 ? { ...s, kg: hint.kg } : s);
+  });
+  return out;
+}
+
 // The exercise's figures in the latest earlier session that has it, and its best est. 1RM before `date`.
-function history(list, key, date) {
+export function history(list, key, date) {
   let prev = null, record = null;
   for (const s of list) {
     if (s.date >= date) continue;
-    const st = stats(s.exercises.filter(x => keyOf(x.name) === key).flatMap(x => x.sets));
+    const st = stats(withHints(s.exercises.filter(x => keyOf(x.name) === key).flatMap(x => x.sets), prev?.st.sets));
     if (!st) continue;
     prev = { date: s.date, st };
     if (st.best != null && (record == null || st.best > record)) record = st.best;
@@ -89,9 +101,9 @@ export function render() {
   const plan = normalizePlan(ctx.store()?.plan), day = sessionDay(plan, cur);
   const rows = [], level = [];
   for (const x of cur.exercises) {
-    const st = stats(x.sets);
-    if (!st) continue;
     const { prev, record } = history(list, keyOf(x.name), cur.date);
+    const st = stats(withHints(x.sets, prev?.st.sets));
+    if (!st) continue;
     if (!prev) { rows.push({ name: x.name, win: { kind: 'new', badge: 'New', short: 'First time logged', delta: '', detail: '' } }); continue; }
     const ws = wins(st, prev.st, record, ctx.wfmt);
     if (ws.length) rows.push({ name: x.name, win: ws[0], more: ws.slice(1), since: prev.date }); else level.push(x.name);

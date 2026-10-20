@@ -91,7 +91,8 @@ function renderWeek(mon) {
     if (s) chips += s.exercises.filter(x => x.sets.length && !plannedKeys.has(keyOf(x.name))).map(x => `<span class="cal-ex ok">+ ${esc(x.name)}</span>`).join('');
     if (s) {
       const n = target?.exercises?.length ? target.exercises.filter(x => done.has(keyOf(x.name))).length : 0;
-      status = target?.exercises?.length ? `${n} of ${target.exercises.length} done` : `${s.exercises.filter(x => x.sets.length).length} exercises`;
+      const k = s.exercises.filter(x => x.sets.length).length;
+      status = target?.exercises?.length ? `${n} of ${target.exercises.length} done` : `${k} exercise${k === 1 ? '' : 's'}`;
     } else if (planned) status = past ? 'Not logged' : isToday ? 'Today' : 'Planned';
     const label = s ? (did?.name || 'Workout') : planned ? planned.name : 'Rest';
     rows.push(`<button type="button" class="cal-day${isToday ? ' today' : ''}${d === sel ? ' sel' : ''}${s ? ' done' : ''}${!s && planned && past ? ' missed' : ''}" data-date="${d}" aria-label="${esc(`${dateOf(d).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}: ${label}${status ? `, ${status}` : ''}`)}">
