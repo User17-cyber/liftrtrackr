@@ -10,16 +10,18 @@ export const canSearchWeb = () => false;
 let sampleP = null;
 const getSample = () => (sampleP ||= window.claude?.use ? window.claude.use('sample') : Promise.resolve(null));
 
-export async function analyzeMeal({ buildPrompt, imageBlob, search, signal, thorough = false }) {
+export async function analyzeMeal({ buildPrompt, imageBlobs = [], search, signal, thorough = false, pass = 1 }) {
   const sample = await getSample();
   if (!sample) throw { code: 'unavailable' };
   const limits = await sample.limits().catch(() => null);
-  if (imageBlob && !limits?.images) throw { code: 'images_unavailable' };
+  if (imageBlobs.length && !limits?.images) throw { code: 'images_unavailable' };
   const useTools = !!limits?.tools;
   const options = { signal };
   // The person chose Thorough analysis in Settings: the most capable model, reasoning longer.
   if (thorough) { options.modelTier = 'complex'; options.effort = 'high'; }
-  if (imageBlob) options.images = [imageBlob];
+  // A second, independent look must not replay the first answer from the short-term cache.
+  if (pass > 1) options.cache = false;
+  if (imageBlobs.length) options.images = imageBlobs;
   if (useTools) options.tools = [{ name: search.name, description: search.description, inputSchema: search.inputSchema, execute: search.execute }];
   const reply = await sample.json(buildPrompt({ tools: useTools, web: false, submit: false }), options);
   return { reply };

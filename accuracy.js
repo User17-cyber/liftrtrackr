@@ -7,6 +7,7 @@
 //  - Checks on each item: calories that don't match the macros, a dry or raw entry matched to a
 //    cooked portion, an unusually large amount.
 import { getFood, getPortions, search, tokens } from './usda.js';
+import { listFavorites } from './favorites.js';
 
 const $ = id => document.getElementById(id);
 const CM_PER_IN = 2.54, ML_PER_FLOZ = 29.5735;
@@ -23,6 +24,56 @@ export function promptContext(store) {
   if (a.bowlMl > 0) parts.push(`bowls that hold about ${Math.round(a.bowlMl)} ml`);
   if (a.glassMl > 0) parts.push(`drinking glasses of about ${Math.round(a.glassMl)} ml`);
   return parts.length ? `This person's own dishes: ${parts.join(', ')}. When these appear in the photo, use them as the scale reference.` : '';
+}
+
+// What the person usually eats, as prompt text: the median weight of foods they've logged at least
+// twice (from the recent days the app has loaded), and their saved favorites' exact numbers.
+export function personalContext(store) {
+  const seen = new Map();
+  for (const day of Object.values(store?.days || {})) for (const e of day?.entries || []) for (const it of e.items || []) {
+    if (!(it.grams > 0)) continue;
+    const key = it.fdcId != null ? `id:${it.fdcId}` : `label:${String(it.label || '').toLowerCase()}`;
+    const s = seen.get(key) || { name: String(it.desc || it.label || '').slice(0, 70), grams: [] };
+    s.grams.push(it.grams / (it.servings > 0 ? it.servings : 1));
+    seen.set(key, s);
+  }
+  const median = a => { const b = [...a].sort((x, y) => x - y), m = b.length >> 1; return Math.round(b.length % 2 ? b[m] : (b[m - 1] + b[m]) / 2); };
+  const usual = [...seen.values()].filter(s => s.grams.length >= 2).sort((a, b) => b.grams.length - a.grams.length).slice(0, 20)
+    .map(s => `${s.name}: about ${median(s.grams)} g (logged ${s.grams.length} times)`);
+  const favs = listFavorites(store).slice(0, 20).map(f => `${f.label}: ${f.n.kcal} kcal, ${f.n.protein} g protein, ${f.n.carb} g carbs, ${f.n.fat} g fat per serving${f.grams ? ` (${f.grams} g)` : ''}`);
+  return [
+    usual.length ? `This person's usual portions, from their past logs:\n${usual.map(x => `- ${x}`).join('\n')}` : '',
+    favs.length ? `Foods they saved with exact numbers (one serving each). If the meal includes one of these, use its numbers in "stated", scaled to the servings eaten, and keep its name:\n${favs.map(x => `- ${x}`).join('\n')}` : '',
+  ].filter(Boolean).join('\n');
+}
+
+// Combines two independent estimates of the same meal (Thorough mode). Foods both passes found get the
+// geometric mean of their weights and a range covering both; a large disagreement lowers confidence.
+// A food only the second pass saw becomes a "did you have…?" suggestion.
+export function mergeEstimates(a, b) {
+  const used = new Set();
+  const first = it => tokens(it.label)[0];
+  const same = (x, y) => (x.custom || y.custom ? x.label.toLowerCase() === y.label.toLowerCase() : String(x.fdcId) === String(y.fdcId)) || first(x) === first(y);
+  const items = a.items.map(it => {
+    if (it.custom?.origin === 'stated') return it;
+    const j = b.items.findIndex((x, k) => !used.has(k) && same(it, x));
+    if (j < 0) return it;
+    used.add(j);
+    const o = b.items[j], g1 = it.grams, g2 = o.grams, grams = Math.max(1, Math.round(Math.sqrt(g1 * g2)));
+    const lo = Math.min(g1 * (it.range?.[0] ?? 1), g2 * (o.range?.[0] ?? 1), g1, g2);
+    const hi = Math.max(g1 * (it.range?.[1] ?? 1), g2 * (o.range?.[1] ?? 1), g1, g2);
+    const apart = Math.max(g1, g2) / Math.min(g1, g2) - 1;
+    return {
+      ...it, grams, range: [lo / grams, hi / grams], ask: it.ask || o.ask,
+      confidence: apart > 0.3 ? 'low' : it.confidence,
+      basis: `${it.basis ? `${it.basis}. ` : ''}Two independent estimates: ${g1} g and ${g2} g${apart > 0.3 ? ', far apart, so check it' : ''}.`.slice(0, 220),
+    };
+  });
+  const extras = b.items.filter((x, k) => !used.has(k) && !x.custom && getFood(x.fdcId)).map(x => ({
+    question: `Also had ${x.label.toLowerCase()}?`, label: x.label, fdcId: x.fdcId, grams: x.grams,
+    kcal: Math.round((getFood(x.fdcId).per100.kcal || 0) * x.grams / 100),
+  }));
+  return { ...a, items, addons: [...(a.addons || []), ...extras].slice(0, 4), notes: a.notes };
 }
 
 /* ---------- personal calibration ---------- */

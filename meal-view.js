@@ -33,6 +33,7 @@ export function itemHtml(it, i) {
       </div>
       ${portions.length ? `<select class="portion" aria-label="Set the weight from a portion"><option value="">${it.custom ? 'Servings…' : 'Portions…'}</option>${portions.map(p => `<option value="${p.g}">${esc(p.label)} · ${fmt(p.g, p.g < 10 ? 1 : 0)} g</option>`).join('')}</select>` : ''}
     </div>
+    ${it.ask ? `<div class="size-ask" role="group" aria-label="${esc(`How much ${it.label}?`)}"><span>How much?</span>${it.ask.map(o => `<button type="button" class="size-opt" data-size="${o.grams}" data-label="${esc(o.label)}" aria-pressed="${it.grams === o.grams}">${esc(o.label)}<small>${fmt(o.grams)} g</small></button>`).join('')}</div>` : ''}
     <div class="item-meta"><label class="item-kcal"><input type="number" class="kcal-in" inputmode="numeric" min="0" step="1" value="${Math.round(n.kcal)}" aria-label="Calories for ${esc(it.label)}">kcal</label>${conf}${range}<span class="macros-line">${macroLine(n)}</span>${it.basis ? `<span>${esc(it.basis)}</span>` : ''}<span class="item-warns">${warningsHtml(it)}</span></div>
   </div>`;
 }

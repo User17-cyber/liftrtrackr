@@ -54,10 +54,10 @@
           <div class="card" id="log">
             <div class="card-head"><h2>Log a meal</h2></div>
             <div id="capture" class="capture" inert>
-              <input type="file" id="photo-input" accept="image/*" class="visually-hidden">
+              <input type="file" id="photo-input" accept="image/*" multiple class="visually-hidden">
               <label for="photo-input" id="dropzone" class="dropzone">
                 <span class="dz-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3.5"/></svg></span>
-                <span><strong>Add a meal photo</strong><span class="hint"><span class="hint-fine">Drop, choose or paste a photo</span><span class="hint-touch">Take a photo or pick one from your library</span></span></span>
+                <span><strong>Add a meal photo</strong><span class="hint"><span class="hint-fine">Drop, choose or paste a photo</span><span class="hint-touch">Take a photo or pick one from your library</span></span><span class="hint dz-tip">Best results: a slight angle with a fork or your hand in view. You can add a side view too.</span></span>
               </label>
               <div id="photo-preview" class="photo-preview" hidden></div>
               <div id="note-wrap" class="field" hidden>
@@ -293,7 +293,7 @@
                 <div class="field"><label for="acc-bowl">Bowl</label><div class="field-row"><input id="acc-bowl" type="number" inputmode="decimal" step="any"><span class="u" id="acc-bowl-u">ml</span></div></div>
                 <div class="field"><label for="acc-glass">Glass</label><div class="field-row"><input id="acc-glass" type="number" inputmode="decimal" step="any"><span class="u" id="acc-glass-u">ml</span></div></div>
               </div>
-              <label class="switch-row" for="acc-thorough"><span><b>Thorough analysis</b><span class="hint">Claude reasons longer about each photo, and on claude.ai the most capable model answers. Slower, and uses more of your Claude plan or API budget.</span></span><input type="checkbox" id="acc-thorough" role="switch"></label>
+              <label class="switch-row" for="acc-thorough"><span><b>Thorough analysis</b><span class="hint">Claude makes two independent estimates, reasoning longer each time (on claude.ai the most capable model answers), and combines them, flagging foods where they disagree. About twice the Claude usage or API cost, and slower.</span></span><input type="checkbox" id="acc-thorough" role="switch"></label>
               <p id="acc-learned" class="fine" aria-live="polite"></p>
               <p id="acc-error" class="form-error" role="alert" hidden></p>
               <div class="backup-actions"><button class="btn btn-primary btn-sm" type="submit">Save</button><button type="button" class="btn btn-plain btn-sm" id="acc-reset" hidden>Forget learned portions</button></div>

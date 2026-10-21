@@ -54,10 +54,11 @@ const SUBMIT_SCHEMA = {
           grams: { type: 'number' },
           grams_low: { type: 'number', description: 'Low end of the honest range for grams eaten' },
           grams_high: { type: 'number', description: 'High end of the honest range for grams eaten' },
+          size_options: nullable({ type: 'array', description: 'For at most two uncertain items: 3 recognisable amounts with grams', items: { type: 'object', properties: { label: { type: 'string' }, grams: { type: 'number' } }, required: ['label', 'grams'], additionalProperties: false } }),
           basis: { type: 'string' },
           confidence: { type: 'string', enum: ['high', 'medium', 'low'] },
         },
-        required: ['label', 'source', 'food_id', 'query', 'brand', 'per_serving', 'source_url', 'source_title', 'stated', 'grams', 'grams_low', 'grams_high', 'basis', 'confidence'],
+        required: ['label', 'source', 'food_id', 'query', 'brand', 'per_serving', 'source_url', 'source_title', 'stated', 'grams', 'grams_low', 'grams_high', 'size_options', 'basis', 'confidence'],
         additionalProperties: false,
       },
     },
@@ -145,7 +146,7 @@ async function run(apiKey, params, signal, onStep) {
  * Runs one analysis. `tools` are page tools, each {name, description, inputSchema, execute(input)}.
  * With `web`, Claude may also search the web. Resolves {reply, usd, webUnavailable}; rejects {code, message}.
  */
-export async function analyzeMeal({ apiKey, model, prompt, imageBase64, tools, signal, web = true, onStep, effort = 'medium' }) {
+export async function analyzeMeal({ apiKey, model, prompt, images = [], tools, signal, web = true, onStep, effort = 'medium' }) {
   const m = modelFor(model);
   const pageTools = tools.map(t => betaTool({
     name: t.name,
@@ -163,7 +164,11 @@ export async function analyzeMeal({ apiKey, model, prompt, imageBase64, tools, s
     strict: true,
   };
   const content = [];
-  if (imageBase64) content.push({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: imageBase64 } });
+  // Each photo is numbered so the prompt can say what it shows (the meal, another angle, leftovers).
+  images.forEach((data, i) => {
+    if (images.length > 1) content.push({ type: 'text', text: `Photo ${i + 1}:` });
+    content.push({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data } });
+  });
   content.push({ type: 'text', text: prompt(web) });
   const params = {
     model: m.id,

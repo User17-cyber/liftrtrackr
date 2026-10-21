@@ -3,10 +3,11 @@
 // Claude plan on claude.ai, or the API key saved on this device in the installed app.
 import { getFood, search, getPortions, nutrientsFor, sumNutrients, datasetName } from './usda.js';
 import { itemNutrients, itemHtml, macroLine, totalsHtml, addonsHtml, warningsHtml } from './meal-view.js';
-import { promptContext, accuracyPrefs, applyCalibration, recordCorrections } from './accuracy.js';
+import { promptContext, personalContext, accuracyPrefs, applyCalibration, recordCorrections, mergeEstimates } from './accuracy.js';
 import { analyzeMeal, canSearchWeb, kind } from './platform.js';
 import { buildPrompt, buildLookupPrompt, searchTool, normalize, customNutrients, applyStated, statedCalories } from './food-ai.js';
 import { initQuickAdd } from './quick-add.js';
+import { initPhotos, getPhotos, clearPhotos, renderPhotos } from './photos.js';
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -14,7 +15,6 @@ const fmt = (n, d = 0) => Number(n || 0).toLocaleString(undefined, { maximumFrac
 const clampG = g => Math.min(3000, Math.max(1, Math.round(g)));
 const stepFor = g => (g < 30 ? 5 : g < 200 ? 10 : 25);
 export const MEALS = { breakfast: 'Breakfast', lunch: 'Lunch', dinner: 'Dinner', snack: 'Snack' };
-const ICON_X = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>';
 const ICON_CAMERA = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3.5"/></svg>';
 
 const ERRORS = {
@@ -42,7 +42,7 @@ const ERRORS = {
 };
 const SETTINGS_CODES = new Set(['no_key', 'bad_key', 'no_access', 'no_model']);
 
-let opts, photo = null, result = null, ctl = null, timer = null, t0 = 0, running = false, mealChoice = 'lunch';
+let opts, result = null, ctl = null, timer = null, t0 = 0, running = false, mealChoice = 'lunch';
 
 export function defaultMeal(d = new Date()) {
   const h = d.getHours() + d.getMinutes() / 60;
@@ -51,22 +51,14 @@ export function defaultMeal(d = new Date()) {
 
 export function initAnalyzer(options) {
   opts = options;
-  const input = $('photo-input'), zone = $('dropzone');
-  input.addEventListener('change', () => { if (input.files[0]) takePhoto(input.files[0]); input.value = ''; });
-  zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag'); });
-  zone.addEventListener('dragleave', () => zone.classList.remove('drag'));
-  zone.addEventListener('drop', e => {
-    e.preventDefault(); zone.classList.remove('drag');
-    const f = [...(e.dataTransfer?.files || [])].find(x => x.type.startsWith('image/') || /\.(heic|heif)$/i.test(x.name));
-    if (f) takePhoto(f); else showError('That file is not an image. Drop a JPEG, PNG or WebP photo.');
+  initPhotos({
+    showError, hideError, active: () => !$('capture').hidden || result?.source === 'manual',
+    onChange() {
+      // A photo added while building a meal by hand becomes that meal's picture.
+      if (result?.source === 'manual') { result.thumb = photo()?.thumb || null; result.photoUrl = photo()?.url || null; renderResult(); }
+      renderCapture();
+    },
   });
-  document.addEventListener('paste', e => {
-    if (!$('capture').hidden && !e.target.closest?.('input, textarea')) {
-      const f = [...(e.clipboardData?.files || [])].find(x => x.type.startsWith('image/'));
-      if (f) { e.preventDefault(); takePhoto(f); }
-    }
-  });
-  $('photo-preview').addEventListener('click', e => { if (e.target.closest('[data-act="clear-photo"]')) clearPhoto(); });
   $('meal-note').addEventListener('input', renderCapture);
   $('describe-btn').addEventListener('click', () => { $('note-wrap').hidden = false; $('meal-note').focus({ preventScroll: true }); renderCapture(); });
   $('analyze-btn').addEventListener('click', analyze);
@@ -75,7 +67,7 @@ export function initAnalyzer(options) {
   $('actionbar').addEventListener('click', onBarClick);
   $('actionbar').addEventListener('change', e => { if (e.target.id === 'ab-meal') setMeal(e.target.value); });
   wireResult();
-  const quick = initQuickAdd({ ...options, meals: MEALS, defaultMeal, thumb: () => photo?.thumb || null, done: resetIdle });
+  const quick = initQuickAdd({ ...options, meals: MEALS, defaultMeal, thumb: () => photo()?.thumb || null, done: resetIdle });
   $('capture').inert = false;
   renderCapture();
   return {
@@ -83,52 +75,19 @@ export function initAnalyzer(options) {
   };
 }
 
-/* ---------- photo intake ---------- */
+/* ---------- photos and description ---------- */
 
-async function decode(file) {
-  try { return await createImageBitmap(file, { imageOrientation: 'from-image' }); } catch { /* fall back */ }
-  const url = URL.createObjectURL(file);
-  try { const img = new Image(); img.src = url; await img.decode(); return img; } finally { URL.revokeObjectURL(url); }
-}
-
-async function takePhoto(file) {
-  hideError();
-  let src;
-  try { src = await decode(file); } catch {
-    return showError("This photo couldn't be opened here. iPhone HEIC photos may need converting: share it as a JPEG, or screenshot it and upload that.");
-  }
-  const w = src.width, h = src.height, scale = Math.min(1, 1600 / Math.max(w, h));
-  const c = document.createElement('canvas');
-  c.width = Math.round(w * scale); c.height = Math.round(h * scale);
-  c.getContext('2d').drawImage(src, 0, 0, c.width, c.height);
-  const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.88));
-  const t = document.createElement('canvas'), s = Math.min(w, h);
-  t.width = t.height = 112;
-  t.getContext('2d').drawImage(src, (w - s) / 2, (h - s) / 2, s, s, 0, 0, 112, 112);
-  src.close?.();
-  if (!blob) return showError("This photo couldn't be prepared. Try a different file.");
-  if (photo?.url) URL.revokeObjectURL(photo.url);
-  photo = { blob, url: URL.createObjectURL(blob), thumb: t.toDataURL('image/jpeg', 0.62) };
-  if (result?.source === 'manual') { result.thumb = photo.thumb; result.photoUrl = photo.url; renderResult(); }
-  renderCapture();
-}
-
-function clearPhoto() {
-  if (photo?.url) URL.revokeObjectURL(photo.url);
-  photo = null;
-  renderCapture();
-}
+// The meal photo (the first one); extra photos are another angle or what was left (see photos.js).
+const photo = () => getPhotos()[0] || null;
 
 function renderCapture() {
-  $('dropzone').hidden = !!photo;
-  if (photo) $('note-wrap').hidden = false;
-  const prev = $('photo-preview');
-  prev.hidden = !photo;
-  prev.innerHTML = photo ? `<img src="${photo.url}" alt="The meal photo you selected"><button type="button" class="btn btn-plain btn-sm" data-act="clear-photo">${ICON_X}Remove photo</button>` : '';
+  renderPhotos();
+  const n = getPhotos().length;
+  if (n) $('note-wrap').hidden = false;
   const hasNote = $('meal-note').value.trim().length > 0;
   const btn = $('analyze-btn');
-  btn.disabled = !photo && !hasNote;
-  btn.textContent = photo || !hasNote ? 'Analyze photo' : 'Analyze description';
+  btn.disabled = !n && !hasNote;
+  btn.textContent = n > 1 ? `Analyze ${n} photos` : n || !hasNote ? 'Analyze photo' : 'Analyze description';
   renderBar();
 }
 
@@ -144,8 +103,8 @@ function renderBar() {
     const kcal = sumNutrients(result.items.map(itemNutrients)).kcal;
     html = `<label class="visually-hidden" for="ab-meal">Meal</label><select id="ab-meal">${mealOptions()}</select>
       <button type="button" class="btn btn-primary ab-main" data-ab="log" ${result.items.length ? '' : 'disabled'}>Add to ${esc(opts.dateLabel(true))} · ${fmt(kcal)} kcal</button>`;
-  } else if (photo || hasNote) {
-    html = `<button type="button" class="btn btn-primary ab-main" data-ab="analyze">${ICON_CAMERA}${photo ? 'Analyze photo' : 'Analyze description'}</button>`;
+  } else if (photo() || hasNote) {
+    html = `<button type="button" class="btn btn-primary ab-main" data-ab="analyze">${ICON_CAMERA}${$('analyze-btn').textContent}</button>`;
   } else {
     html = '';
   }
@@ -174,17 +133,22 @@ function setMeal(v) {
 
 async function analyze() {
   const note = $('meal-note').value.trim().slice(0, 600);
-  if ((!photo && !note) || running) return;
+  const shots = getPhotos();
+  if ((!shots.length && !note) || running) return;
   hideError();
   ctl = new AbortController();
-  startProgress(photo ? 'Claude is looking at your plate' : 'Claude is reading your description');
+  startProgress(shots.length ? `Claude is looking at your plate${shots.length > 1 ? ` (${shots.length} photos)` : ''}` : 'Claude is reading your description');
   try {
-    const store = opts.store();
-    const { reply, usd, webUnavailable } = await analyzeMeal({
-      buildPrompt: caps => buildPrompt(note, !!photo, caps, promptContext(store)), imageBlob: photo?.blob || null,
-      search: searchTool(addStep), signal: ctl.signal, onStep: addStep, thorough: !!accuracyPrefs(store).thorough,
+    const store = opts.store(), thorough = !!accuracyPrefs(store).thorough;
+    const roles = shots.map(p => p.role), context = [promptContext(store), personalContext(store)].filter(Boolean).join('\n');
+    const pass = (n, onStep) => analyzeMeal({
+      buildPrompt: caps => buildPrompt(note, roles, caps, context), imageBlobs: shots.map(p => p.blob),
+      search: searchTool(onStep), signal: ctl.signal, onStep, thorough, pass: n,
     });
-    const r = normalize(reply);
+    // Thorough: two independent estimates, combined (see mergeEstimates).
+    const outs = await Promise.all(thorough ? [pass(1, addStep), pass(2, step => addStep(`Second look: ${step}`))] : [pass(1, addStep)]);
+    let r = normalize(outs[0].reply);
+    if (outs[1]) r = mergeEstimates(r, normalize(outs[1].reply));
     r.items = applyCalibration(store, r.items);
     // Safety net: one calorie figure in the description and one food means that food has those calories.
     const fromNote = statedCalories(note);
@@ -194,7 +158,8 @@ async function analyze() {
       return;
     }
     mealChoice = defaultMeal();
-    result = { ...r, usd, webUnavailable, source: photo ? 'photo' : 'text', thumb: photo?.thumb || null, photoUrl: photo?.url || null };
+    const usd = outs.reduce((a, o) => a + (o.usd || 0), 0) || undefined;
+    result = { ...r, usd, webUnavailable: outs.some(o => o.webUnavailable), passes: outs.length, source: shots.length ? 'photo' : 'text', thumb: photo()?.thumb || null, photoUrl: photo()?.url || null };
     renderResult(true);
   } catch (e) {
     if (e?.code !== 'cancelled') showError(ERRORS[e?.code] || `Something went wrong reaching Claude${e?.message ? ` (${e.message})` : ''}. Try again in a moment.`, SETTINGS_CODES.has(e?.code));
@@ -209,7 +174,8 @@ function startProgress(title) {
   $('progress-steps').innerHTML = '';
   $('capture').inert = true;
   setTitle(title);
-  addStep(photo ? 'Sent the photo to Claude' : 'Sent the description to Claude');
+  const n = getPhotos().length;
+  addStep(n ? `Sent ${n > 1 ? `${n} photos` : 'the photo'} to Claude` : 'Sent the description to Claude');
   t0 = Date.now();
   const tick = () => {
     const s = Math.floor((Date.now() - t0) / 1000), txt = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
@@ -235,7 +201,7 @@ function hideError() { $('analyze-error').hidden = true; }
 function startManual() {
   hideError();
   mealChoice = defaultMeal();
-  result = { title: '', items: [], notes: '', source: 'manual', thumb: photo?.thumb || null, photoUrl: photo?.url || null };
+  result = { title: '', items: [], notes: '', source: 'manual', thumb: photo()?.thumb || null, photoUrl: photo()?.url || null };
   renderResult(true);
   openFinder($('r-add-finder'), '');
 }
@@ -243,7 +209,7 @@ function startManual() {
 // Back to the empty capture state after logging or discarding.
 function resetIdle() {
   result = null;
-  clearPhoto();
+  clearPhotos();
   $('meal-note').value = '';
   $('note-wrap').hidden = true;
   renderCapture();
@@ -264,7 +230,7 @@ function renderResult(reveal = false) {
         <div id="r-addons">${addonsHtml(result)}</div>
         <button type="button" class="btn btn-tinted btn-sm add-food" id="r-add">+ Add a food</button>
         <div id="r-add-finder"></div>
-        ${result.notes || result.usd ? `<p class="ai-notes">${esc(result.notes)}${result.webUnavailable ? ' Web search is turned off for your Anthropic organization, so brand-name foods came from labels or the food databases.' : ''}${result.usd ? ` Analysis cost about ${result.usd < 0.01 ? 'under 1¢' : `${Math.round(result.usd * 100)}¢`} on your Anthropic account.` : ''}</p>` : ''}
+        ${result.notes || result.usd ? `<p class="ai-notes">${esc(result.notes)}${result.webUnavailable ? ' Web search is turned off for your Anthropic organization, so brand-name foods came from labels or the food databases.' : ''}${result.passes > 1 ? ' Two independent estimates were combined.' : ''}${result.usd ? ` Analysis cost about ${result.usd < 0.01 ? 'under 1¢' : `${Math.round(result.usd * 100)}¢`} on your Anthropic account.` : ''}</p>` : ''}
       </div>
       <div id="r-totals">${totalsHtml(result)}</div>
       <div class="result-actions">
@@ -321,7 +287,7 @@ async function lookupFood(btn, row) {
   if (!q || !li) return;
   li.innerHTML = `<span class="lookup-wait"><span class="spinner" aria-hidden="true"></span>${canSearchWeb() ? 'Searching the web…' : 'Asking Claude…'}</span>`;
   try {
-    const { reply } = await analyzeMeal({ buildPrompt: caps => buildLookupPrompt(q, caps), imageBlob: null, search: searchTool(), signal: new AbortController().signal });
+    const { reply } = await analyzeMeal({ buildPrompt: caps => buildLookupPrompt(q, caps), imageBlobs: [], search: searchTool(), signal: new AbortController().signal });
     let item = normalize({ title: q, items: Array.isArray(reply?.items) ? reply.items.slice(0, 1) : [] }).items[0];
     const fromQuery = statedCalories(q);
     if (item && fromQuery != null && item.custom?.origin !== 'stated') item = applyStated(item, { kcal: fromQuery });
@@ -412,6 +378,14 @@ function wireResult() {
         result.items.push({ label: food.desc.slice(0, 80), fdcId: food.id, grams: clampG(p?.g || 100), basis: p ? `Started at ${p.label.startsWith('typical') ? 'the typical serving' : `the portion ${p.label}`}` : 'Started at 100 g', confidence: null });
         $('r-add-finder').innerHTML = '';
       }
+      refreshItems();
+    } else if (t.dataset.size) {
+      // A size question answered: that amount, as stated by the person, replaces the estimate.
+      const it = result.items[row.dataset.i];
+      it.grams = clampG(Number(t.dataset.size));
+      it.range = null;
+      it.confidence = 'high';
+      it.basis = `You chose ${t.dataset.label} (${it.grams} g).`;
       refreshItems();
     } else if (t.dataset.addon != null) {
       // "Did you add…?" answered yes: the suggested food joins the meal.
