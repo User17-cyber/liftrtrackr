@@ -305,6 +305,10 @@ body[data-quick] #actionbar { display: none !important; }
 .addon-a { color: var(--accent); font-size: 14px; font-weight: 600; }
 .addon:active { background: var(--accent-soft); }
 .addon:focus-visible { outline: 2.5px solid var(--accent); outline-offset: 2px; }
+.refine { display: grid; gap: 6px; }
+.refine-row { display: flex; gap: 8px; }
+.refine-row input { flex: 1; min-width: 0; }
+.refine-row .btn { flex: none; }
 .result-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
 .result-actions select { width: auto; }
 .totals { display: grid; gap: 12px; padding: 14px; border-radius: 16px; background: var(--fill); }

@@ -5,7 +5,8 @@ import { getFood, search, getPortions, nutrientsFor, sumNutrients, datasetName }
 import { itemNutrients, itemHtml, macroLine, totalsHtml, addonsHtml, warningsHtml } from './meal-view.js';
 import { promptContext, personalContext, accuracyPrefs, applyCalibration, recordCorrections, mergeEstimates } from './accuracy.js';
 import { analyzeMeal, canSearchWeb, kind } from './platform.js';
-import { buildPrompt, buildLookupPrompt, searchTool, normalize, customNutrients, applyStated, statedCalories } from './food-ai.js';
+import { buildPrompt, buildLookupPrompt, buildRefinePrompt, searchTool, normalize, customNutrients, applyStated, statedCalories } from './food-ai.js';
+import { describeMeal, mergeRefined } from './refine.js';
 import { initQuickAdd } from './quick-add.js';
 import { initPhotos, getPhotos, clearPhotos, renderPhotos } from './photos.js';
 
@@ -159,11 +160,42 @@ async function analyze() {
     }
     mealChoice = defaultMeal();
     const usd = outs.reduce((a, o) => a + (o.usd || 0), 0) || undefined;
-    result = { ...r, usd, webUnavailable: outs.some(o => o.webUnavailable), passes: outs.length, source: shots.length ? 'photo' : 'text', thumb: photo()?.thumb || null, photoUrl: photo()?.url || null };
+    result = { ...r, usd, webUnavailable: outs.some(o => o.webUnavailable), passes: outs.length, note, source: shots.length ? 'photo' : 'text', thumb: photo()?.thumb || null, photoUrl: photo()?.url || null };
     renderResult(true);
   } catch (e) {
     if (e?.code !== 'cancelled') showError(ERRORS[e?.code] || `Something went wrong reaching Claude${e?.message ? ` (${e.message})` : ''}. Try again in a moment.`, SETTINGS_CODES.has(e?.code));
   } finally {
+    stopProgress();
+  }
+}
+
+// Sends the person's correction, with the meal as it stands and the photos, and swaps in Claude's
+// updated estimate. Only what the correction concerns should change (see refine.js).
+async function refine(correction) {
+  if (running || !result) return;
+  const store = opts.store(), shots = getPhotos(), before = sumNutrients(result.items.map(itemNutrients)).kcal;
+  hideError();
+  ctl = new AbortController();
+  startProgress('Claude is refining the estimate');
+  $('result').inert = true;
+  try {
+    const context = [promptContext(store), personalContext(store)].filter(Boolean).join('\n');
+    const current = describeMeal(result.items, itemNutrients);
+    const out = await analyzeMeal({
+      buildPrompt: caps => buildRefinePrompt({ correction, note: result.note, roles: shots.map(p => p.role), current, context }, caps),
+      imageBlobs: shots.map(p => p.blob), search: searchTool(addStep), signal: ctl.signal, onStep: addStep,
+      thorough: !!accuracyPrefs(store).thorough, pass: 2,
+    });
+    const r = mergeRefined(result.items, out.reply, store, correction);
+    if (!r.items.length) { showError('Claude’s refined estimate came back empty, so nothing was changed. Try saying it another way.'); return; }
+    result = { ...result, ...r, title: result.title || r.title, usd: (result.usd || 0) + (out.usd || 0) || undefined, refined: (result.refined || 0) + 1 };
+    renderResult();
+    const after = sumNutrients(result.items.map(itemNutrients)).kcal;
+    opts.toast(`Refined: ${fmt(before)} → ${fmt(after)} kcal`);
+  } catch (e) {
+    if (e?.code !== 'cancelled') showError(ERRORS[e?.code] || `Something went wrong reaching Claude${e?.message ? ` (${e.message})` : ''}. Your estimate is unchanged.`, SETTINGS_CODES.has(e?.code));
+  } finally {
+    $('result').inert = false;
     stopProgress();
   }
 }
@@ -230,7 +262,11 @@ function renderResult(reveal = false) {
         <div id="r-addons">${addonsHtml(result)}</div>
         <button type="button" class="btn btn-tinted btn-sm add-food" id="r-add">+ Add a food</button>
         <div id="r-add-finder"></div>
-        ${result.notes || result.usd ? `<p class="ai-notes">${esc(result.notes)}${result.webUnavailable ? ' Web search is turned off for your Anthropic organization, so brand-name foods came from labels or the food databases.' : ''}${result.passes > 1 ? ' Two independent estimates were combined.' : ''}${result.usd ? ` Analysis cost about ${result.usd < 0.01 ? 'under 1¢' : `${Math.round(result.usd * 100)}¢`} on your Anthropic account.` : ''}</p>` : ''}
+        ${result.source !== 'manual' ? `<form class="refine" id="r-refine" novalidate>
+          <label class="field-label" for="r-fix">Something off? Tell Claude</label>
+          <div class="refine-row"><input type="text" id="r-fix" maxlength="300" autocomplete="off" placeholder="Brown rice, and less of it · no sauce" enterkeyhint="send"><button type="submit" class="btn btn-tinted btn-sm">Refine</button></div>
+        </form>` : ''}
+        ${result.notes || result.usd || result.refined || result.passes > 1 ? `<p class="ai-notes">${esc(result.notes)}${result.webUnavailable ? ' Web search is turned off for your Anthropic organization, so brand-name foods came from labels or the food databases.' : ''}${result.passes > 1 ? ' Two independent estimates were combined.' : ''}${result.refined ? ` Refined ${result.refined === 1 ? 'once' : `${result.refined} times`} from your corrections.` : ''}${result.usd ? ` Analysis cost about ${result.usd < 0.01 ? 'under 1¢' : `${Math.round(result.usd * 100)}¢`} on your Anthropic account.` : ''}</p>` : ''}
       </div>
       <div id="r-totals">${totalsHtml(result)}</div>
       <div class="result-actions">
@@ -325,6 +361,7 @@ function wireResult() {
         const it = result.items[row.dataset.i];
         it.grams = clampG(g);
         it.range = null;
+        it.manual = true;
         const n = itemNutrients(it);
         row.querySelector('.kcal-in').value = Math.round(n.kcal);
         row.querySelector('.macros-line').textContent = macroLine(n);
@@ -335,18 +372,25 @@ function wireResult() {
       }
     } else if (t.classList.contains('finder-q')) t.closest('.finder').querySelector('.finder-list').innerHTML = finderList(t.value);
   });
+  el.addEventListener('submit', e => {
+    if (e.target.id !== 'r-refine') return;
+    e.preventDefault();
+    const text = $('r-fix').value.trim().slice(0, 300);
+    if (text) { $('r-fix').blur(); refine(text); } else $('r-fix').focus();
+  });
   el.addEventListener('change', e => {
     const t = e.target, row = t.closest('.item');
     if (t.id === 'r-meal') setMeal(t.value);
     else if (t.classList.contains('kcal-in')) {
       // Typed calories win: the food keeps its proportions, scaled to the stated number.
       const v = Number(t.value);
-      if (t.value !== '' && v >= 0 && v <= 20000) { result.items[row.dataset.i] = applyStated(result.items[row.dataset.i], { kcal: v }); refreshItems(); }
+      if (t.value !== '' && v >= 0 && v <= 20000) { result.items[row.dataset.i] = { ...applyStated(result.items[row.dataset.i], { kcal: v }), manual: true }; refreshItems(); }
       else t.value = Math.round(itemNutrients(result.items[row.dataset.i]).kcal);
     }
     else if (t.classList.contains('portion') && t.value) {
       result.items[row.dataset.i].grams = clampG(Number(t.value));
       result.items[row.dataset.i].range = null;
+      result.items[row.dataset.i].manual = true;
       t.value = '';
       refreshRow(row);
     } else if (t.classList.contains('grams')) t.value = result.items[row.dataset.i].grams;
@@ -359,6 +403,7 @@ function wireResult() {
       const it = result.items[row.dataset.i], d = Number(t.dataset.dir);
       const s = stepFor(d > 0 ? it.grams : it.grams - 1);
       it.grams = clampG(d > 0 ? Math.floor(it.grams / s) * s + s : Math.ceil(it.grams / s) * s - s);
+      it.manual = true;
       refreshRow(row);
     } else if (t.classList.contains('remove-btn')) { result.items.splice(Number(row.dataset.i), 1); refreshItems(); }
     else if (t.classList.contains('change')) {
@@ -384,6 +429,7 @@ function wireResult() {
       const it = result.items[row.dataset.i];
       it.grams = clampG(Number(t.dataset.size));
       it.range = null;
+      it.manual = true;
       it.confidence = 'high';
       it.basis = `You chose ${t.dataset.label} (${it.grams} g).`;
       refreshItems();

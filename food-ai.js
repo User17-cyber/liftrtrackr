@@ -16,7 +16,7 @@ const ITEM_SHAPE = `{"label": string, "source": "database" | "web" | "label" | "
   "per_serving": null or {"serving_label": string, "serving_g": number, "kcal": number, "protein_g": number, "carbs_g": number, "fat_g": number, "fiber_g": number or null, "sugar_g": number or null, "sodium_mg": number or null, "satfat_g": number or null},
   "source_url": string or null, "source_title": string or null,
   "stated": null or {"kcal": number or null, "protein_g": number or null, "carbs_g": number or null, "fat_g": number or null},
-  "grams": number, "grams_low": number, "grams_high": number, "size_options": null or [{"label": string, "grams": number}],
+  "grams": number, "grams_low": number, "grams_high": number, "size_options": null or [{"label": string, "grams": number}], "from": integer or null,
   "basis": string, "confidence": "high" | "medium" | "low"}`;
 const ADDON_SHAPE = `{"question": string, "label": string, "food_id": string or null, "query": string, "grams": number}`;
 
@@ -91,6 +91,23 @@ export function buildPrompt(note, photos, caps, context = '') {
 }
 
 // One food the person typed into search, usually a brand USDA doesn't carry.
+// A correction to an estimate the person has reviewed. `current` lists the meal as it stands (with
+// their own edits) as numbered lines; `roles` says what each attached photo shows.
+export function buildRefinePrompt({ correction, note, roles, current, context = '' }, caps) {
+  return [
+    'You estimated a meal for a calorie tracker. The person reviewed it and tells you what to fix:',
+    `"""${correction}"""`,
+    note ? `Their original description of the meal:\n"""${note}"""` : '',
+    roles.length ? photoText(roles) : '',
+    `The meal as it stands now, numbered (it includes any changes they made by hand):\n${current}`,
+    'Apply their correction. Change only what it concerns, and keep every other food exactly as it is: same food_id, grams and label. Return the whole meal, and for each food set "from" to its number in the list above, or null for a food that is new. If the correction means a different food, search again and use the new entry. If they give numbers (calories, grams, a count), use them as stated.',
+    READ_FIRST,
+    `Sources:\n${sourceRules(caps)}`,
+    `Amounts:${context ? `\n${context}` : ''}\n${PORTION_RULES}`,
+    outputRules(caps.submit),
+  ].filter(Boolean).join('\n\n');
+}
+
 export function buildLookupPrompt(query, caps) {
   return [
     `Find the nutrition facts for this food so the person can log it:\n"""${query}"""`,
@@ -181,6 +198,8 @@ export function normalize(reply) {
       range: lo > 0 && hi > 0 && lo <= grams && hi >= grams && hi > lo ? [Math.max(0.3, lo / grams), Math.min(3, hi / grams)] : null,
       // A one-tap size question for an uncertain amount ("½ cup · 1 cup · 1½ cups").
       ask: sizeOptions(it.size_options),
+      // When refining: the number of the existing food this continues (1-based), else null.
+      from: Number.isInteger(it.from) && it.from > 0 ? it.from : null,
     };
     const stated = it.stated && typeof it.stated === 'object' ? it.stated : null;
     const custom = toCustom(it);
