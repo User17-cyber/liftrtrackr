@@ -89,9 +89,13 @@ function retryPending() {
   renderActive();
 }
 
+let syncTimer = null;
 function onStoreChange({ error } = {}) {
   if (error) { toast('Your log stopped syncing. Reload the page to reconnect.'); return; }
   requestRender();
+  // Weigh-ins that arrive from another device or a restored backup update the profile too (when on).
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(syncProfileWeight, 600);
 }
 
 /* ---------- tabs and date ---------- */
@@ -135,17 +139,26 @@ async function onLog(entry) {
   await state.store.saveDay(state.date, { date: state.date, entries: [...day.entries, entry] });
 }
 
-// A new latest weigh-in moves the profile weight to the smoothed trend, keeping estimates current.
-async function syncProfileWeight(trendKg) {
-  const p = state.store?.profile;
-  const kg = Math.round(trendKg * 10) / 10;
-  if (!p || Math.abs((p.weightKg || 0) - kg) < 0.05) return false;
+// The most recent weigh-in by date, or null.
+function latestWeighIn() {
+  const list = (state.store?.weights?.entries || []).filter(x => x && /^\d{4}-\d{2}-\d{2}$/.test(x.d) && x.kg > 0);
+  return list.sort((a, b) => a.d.localeCompare(b.d)).at(-1) || null;
+}
+
+// With "Update from my weigh-ins" on (Settings → Your details; off by default), the profile weight, and
+// so the maintenance estimate and calorie target, follow the most recent weigh-in. Returns that
+// weigh-in when it changed the profile, else null.
+async function syncProfileWeight() {
+  const p = state.store?.profile, latest = latestWeighIn();
+  if (!p?.autoWeight || !latest) return null;
+  const kg = Math.round(latest.kg * 10) / 10;
+  if (Math.abs((p.weightKg || 0) - kg) < 0.05) return null;
   try {
     const next = { ...p, weightKg: kg };
     await state.store.saveProfile(next);
     profile?.fill(next);
-    return true;
-  } catch { return false; }
+    return latest;
+  } catch { return null; }
 }
 
 /* ---------- boot ---------- */
@@ -154,10 +167,10 @@ async function boot() {
   const store = () => state.store;
   const base = { store, toast, saveError, units, today: todayISO };
   initAppearance({ ...base, onUnits: () => { profile?.onUnits(); renderActive(); } });
-  profile = initProfile(base);
+  profile = initProfile({ ...base, syncWeight: syncProfileWeight });
   targets = initTargets(base);
   accuracy = initAccuracySettings(base);
-  weight = initWeight({ ...base, onTrend: syncProfileWeight, intakeFor: d => dayTotals(dayDoc(state.store, d)).kcal });
+  weight = initWeight({ ...base, onWeighIn: syncProfileWeight, intakeFor: d => dayTotals(dayDoc(state.store, d)).kcal });
   lifting = initLifting({ ...base, date: () => state.date, setDate });
   calories = initCalories({ ...base, date: () => state.date, setDate, measured: () => weight.measured(), goTo: setTab });
   initPlatformSettings({ ...base, onRestore: () => { if (state.store?.profile) profile.fill(state.store.profile); renderActive(); } });

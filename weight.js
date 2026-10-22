@@ -226,7 +226,11 @@ async function onListClick(e) {
   if (act === 'del-yes') {
     confirmDel = null;
     const cur = data();
-    try { await ctx.store().saveWeights({ entries: cur.entries.filter(x => x.d !== d), goalKg: cur.goalKg }); ctx.toast('Weigh-in deleted'); }
+    try {
+      await ctx.store().saveWeights({ entries: cur.entries.filter(x => x.d !== d), goalKg: cur.goalKg });
+      const synced = await ctx.onWeighIn();
+      ctx.toast(synced ? `Weigh-in deleted. Maintenance now uses ${dateShort(synced.d)}’s, ${wfmt(synced.kg)}.` : 'Weigh-in deleted');
+    }
     catch (er) { ctx.toast(ctx.saveError(er)); }
   }
   renderList(withTrend(data().entries));
@@ -251,9 +255,8 @@ async function onSave(e) {
     await ctx.store().saveWeights({ entries, goalKg: cur.goalKg });
     $('wt-value').value = '';
     $('wt-value').blur();
-    const latest = withTrend(entries).at(-1);
-    const synced = latest.d === d ? await ctx.onTrend(latest.trend) : false;
-    ctx.toast(synced ? `Saved. Maintenance now uses your trend weight, ${wfmt(latest.trend)}.` : 'Weigh-in saved');
+    const synced = await ctx.onWeighIn();
+    ctx.toast(synced ? `Saved. Maintenance now uses this weigh-in, ${wfmt(synced.kg)}.` : 'Weigh-in saved');
   } catch (er) { ctx.toast(ctx.saveError(er)); }
   $('wt-save').disabled = false;
 }

@@ -17,6 +17,7 @@ export function initProfile(c) {
   });
   form.addEventListener('input', () => { $('pf-error').hidden = true; });
   form.addEventListener('submit', onSubmit);
+  $('pf-auto').addEventListener('change', onAuto);
   applyUnits(ctx.units());
   return { render, onUnits, fill };
 }
@@ -75,7 +76,27 @@ export function fill(p) {
 export function render() {
   const p = ctx.store()?.profile;
   if (p && !filled && !$('profile-form').contains(document.activeElement)) { fill(p); filled = true; }
+  if (document.activeElement !== $('pf-auto')) $('pf-auto').checked = !!p?.autoWeight;
+  // While the weight follows weigh-ins it isn't typed here (it would be replaced at the next sync).
+  const follows = !!p?.autoWeight && (ctx.store()?.weights?.entries || []).length > 0;
+  $('pf-weight').readOnly = follows;
+  $('pf-weight-hint').hidden = !follows;
   if (formUnits !== ctx.units()) onUnits();
+}
+
+// "Update from my weigh-ins": saved at once (off by default); turning it on applies the latest weigh-in.
+async function onAuto(e) {
+  const on = e.target.checked, store = ctx.store();
+  if (!store) { e.target.checked = !on; return ctx.toast(ctx.saveError({ code: 'not_ready' })); }
+  try {
+    await store.saveProfile({ ...(store.profile || {}), autoWeight: on });
+    const synced = on ? await ctx.syncWeight() : null;
+    render();
+    const w = kg => (ctx.units() === 'us' ? `${(kg * LB_PER_KG).toFixed(1)} lb` : `${kg.toFixed(1)} kg`);
+    ctx.toast(!on ? 'Off. Weigh-ins no longer change your details.'
+      : synced ? `On. Maintenance now uses your latest weigh-in, ${w(synced.kg)}.`
+      : store.weights?.entries?.length ? 'On. Your weight already matches your latest weigh-in.' : 'On. Your next weigh-in will update your weight and maintenance.');
+  } catch (err) { e.target.checked = !on; ctx.toast(ctx.saveError(err)); }
 }
 
 async function onSubmit(e) {

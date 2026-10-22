@@ -246,7 +246,7 @@ function renderTdee() {
   const goal = est.goal.label.charAt(0).toLowerCase() + est.goal.label.slice(1);
   out.innerHTML = `<div class="tdee">
     <div class="big-figure"><b>${fmt(maint)}</b><span class="muted">kcal a day, estimated</span></div>
-    <p class="fine">The equations range from ${fmt(r10(est.low))} to ${fmt(r10(est.high))} kcal. Any one person can differ by about 10%.</p>
+    <p class="fine">The equations range from ${fmt(r10(est.low))} to ${fmt(r10(est.high))} kcal. Any one person can differ by about 10%.${ctx.store()?.profile?.autoWeight ? ' Your weight updates from your latest weigh-in.' : ''}</p>
     ${m?.status === 'ok' ? `<div class="pill-box">Measured from your meals and weigh-ins: <b>${fmt(r10(m.kcal))} kcal</b> over ${m.span} days.</div>` : ''}
     <div class="pill-box">${tg.source !== 'estimate' ? `Your own target: <b>${fmt(tg.kcal)} kcal</b>, ${fmt(Math.abs(tg.kcal - maint))} ${tg.kcal >= maint ? 'above' : 'below'} estimated maintenance. <button type="button" class="link-btn" data-goto="settings" data-anchor="targets">Change</button>`
       : est.goal.delta === 0 ? `Daily target: <b>${fmt(target)} kcal</b>, the same as maintenance.`

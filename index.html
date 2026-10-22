@@ -252,8 +252,9 @@
               </div>
               <div class="two">
                 <div class="field"><label for="pf-age">Age</label><div class="field-row"><input id="pf-age" type="number" inputmode="numeric" min="18" max="100" step="1"><span class="u">yrs</span></div></div>
-                <div class="field"><label for="pf-weight">Weight</label><div class="field-row"><input id="pf-weight" type="number" inputmode="decimal" step="0.1"><span class="u" id="pf-weight-u">kg</span></div></div>
+                <div class="field"><label for="pf-weight">Weight</label><div class="field-row"><input id="pf-weight" type="number" inputmode="decimal" step="0.1"><span class="u" id="pf-weight-u">kg</span></div><div class="hint" id="pf-weight-hint" hidden>From your latest weigh-in</div></div>
               </div>
+              <label class="switch-row" for="pf-auto"><span><b>Update from my weigh-ins</b><span class="hint">When on, your most recent weigh-in sets the weight here, so your maintenance and calorie target recalculate on their own.</span></span><input type="checkbox" id="pf-auto" role="switch"></label>
               <div class="field" id="height-metric"><label for="pf-height-cm">Height</label><div class="field-row"><input id="pf-height-cm" type="number" inputmode="decimal" step="0.5"><span class="u">cm</span></div></div>
               <div class="field" id="height-us" hidden><label for="pf-height-ft">Height</label><div class="field-row"><input id="pf-height-ft" type="number" inputmode="numeric" min="3" max="7" step="1" aria-label="Height, feet"><span class="u">ft</span><input id="pf-height-in" type="number" inputmode="decimal" min="0" max="11.9" step="0.5" aria-label="Height, inches"><span class="u">in</span></div></div>
               <div class="field"><label for="pf-activity">Activity level</label><select id="pf-activity"></select><div class="hint" id="pf-activity-hint"></div></div>
