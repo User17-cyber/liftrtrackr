@@ -147,6 +147,19 @@
             <div id="wt-chart" class="chart"></div>
             <p id="wt-readout" class="readout" aria-live="polite"></p>
           </div>
+          <div class="card" id="bodyfat">
+            <div class="card-head"><h2>Body fat</h2></div>
+            <div id="bf-hero" class="wt-hero"></div>
+            <div id="bf-rows"></div>
+            <form id="bf-form" class="bf-form" novalidate>
+              <p class="fine" id="bf-how"></p>
+              <div class="field"><label for="bf-waist">Waist</label><div class="field-row"><input id="bf-waist" type="number" inputmode="decimal" step="0.5"><span class="u bf-u">cm</span></div></div>
+              <div class="field"><label for="bf-neck">Neck</label><div class="field-row"><input id="bf-neck" type="number" inputmode="decimal" step="0.5"><span class="u bf-u">cm</span></div></div>
+              <div class="field" id="bf-hip-field" hidden><label for="bf-hip">Hips</label><div class="field-row"><input id="bf-hip" type="number" inputmode="decimal" step="0.5"><span class="u bf-u">cm</span></div></div>
+              <button class="btn btn-tinted" type="submit" id="bf-save">Save measurements</button>
+              <p id="bf-error" class="form-error" role="alert" hidden></p>
+            </form>
+          </div>
         </div>
         <div class="stack">
           <div class="card"><div class="card-head"><h2>Insights</h2></div><div id="wt-stats"></div></div>

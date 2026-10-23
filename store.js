@@ -111,7 +111,7 @@ export async function openStore(onChange) {
 }
 
 // Combines a backup with this device's log so nothing on either side is lost: meals match by id,
-// weigh-ins and lifting sessions by date (this device's version wins), exercises within a session and
+// weigh-ins, tape measurements and lifting sessions by date (this device's version wins), exercises within a session and
 // favorites by name.
 export function mergeBackup(cur, data) {
   const days = { ...(data.days || {}) };
@@ -127,8 +127,13 @@ export function mergeBackup(cur, data) {
   }
   const byDay = new Map((data.weights?.entries || []).map(w => [w.d, w]));
   for (const w of cur.weights?.entries || []) byDay.set(w.d, w);
+  const tapeByDay = new Map((data.weights?.tape || []).map(t => [t.d, t]));
+  for (const t of cur.weights?.tape || []) tapeByDay.set(t.d, t);
   const weights = cur.weights || data.weights
-    ? { entries: [...byDay.values()].sort((a, b) => String(a.d).localeCompare(String(b.d))), goalKg: cur.weights?.goalKg ?? data.weights?.goalKg ?? null }
+    ? {
+      entries: [...byDay.values()].sort((a, b) => String(a.d).localeCompare(String(b.d))), goalKg: cur.weights?.goalKg ?? data.weights?.goalKg ?? null,
+      tape: [...tapeByDay.values()].sort((a, b) => String(a.d).localeCompare(String(b.d))),
+    }
     : null;
   const favs = new Map((data.favorites?.items || []).map(f => [key({ name: f.label }), f]));
   for (const f of cur.favorites?.items || []) favs.set(key({ name: f.label }), f);

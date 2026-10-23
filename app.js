@@ -4,6 +4,7 @@
 import { loadFoods } from './usda.js';
 import { initAnalyzer } from './analyze.js';
 import { initWeight } from './weight.js';
+import { initBodyFat } from './bodyfat.js';
 import { initLifting } from './lifting.js';
 import { initCalories, dayDoc, dayTotals } from './calories.js';
 import { initProfile } from './profile.js';
@@ -21,7 +22,7 @@ const addDays = (s, n) => { const d = parseISO(s); d.setDate(d.getDate() + n); r
 const todayISO = () => iso(new Date());
 
 const state = { date: todayISO(), store: null, tab: initialTab() };
-let analyzer = null, weight = null, lifting = null, calories = null, profile = null, targets = null, accuracy = null, toastTimer = null;
+let analyzer = null, weight = null, bodyfat = null, lifting = null, calories = null, profile = null, targets = null, accuracy = null, toastTimer = null;
 let renderQueued = false, pendingRender = false;
 
 function initialTab() {
@@ -63,7 +64,7 @@ function renderActive() {
   renderDate();
   renderAppearance();
   if (state.tab === 'calories') calories?.render();
-  else if (state.tab === 'weight') weight?.render();
+  else if (state.tab === 'weight') { weight?.render(); bodyfat?.render(); }
   else if (state.tab === 'lifting') lifting?.render();
   else { profile?.render(); targets?.render(); accuracy?.render(); }
   analyzer?.refresh();
@@ -171,6 +172,7 @@ async function boot() {
   targets = initTargets(base);
   accuracy = initAccuracySettings(base);
   weight = initWeight({ ...base, onWeighIn: syncProfileWeight, intakeFor: d => dayTotals(dayDoc(state.store, d)).kcal });
+  bodyfat = initBodyFat(base);
   lifting = initLifting({ ...base, date: () => state.date, setDate });
   calories = initCalories({ ...base, date: () => state.date, setDate, measured: () => weight.measured(), goTo: setTab });
   initPlatformSettings({ ...base, onRestore: () => { if (state.store?.profile) profile.fill(state.store.profile); renderActive(); } });

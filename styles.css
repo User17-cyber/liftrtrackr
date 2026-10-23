@@ -390,6 +390,11 @@ body[data-quick] #actionbar { display: none !important; }
 .wl-confirm { display: flex; gap: 18px; }
 .wl-kg { font-weight: 700; font-variant-numeric: tabular-nums; }
 .wl-delta { color: var(--muted); font-size: 14px; text-align: right; font-variant-numeric: tabular-nums; }
+.bf-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr)); gap: 10px; align-items: end; margin-top: 16px; padding-top: 14px; border-top: 0.5px solid var(--line); }
+.bf-form .field-row input { min-width: 0; }
+.bf-form .fine, .bf-form .btn, .bf-form .form-error { grid-column: 1 / -1; }
+#bf-hero .fine { font-size: 14px; margin-top: 2px; }
+#bf-hero .empty + .btn { justify-self: start; margin-top: 8px; }
 .goal-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; }
 .goal-form .field { flex: 1 1 9rem; }
 

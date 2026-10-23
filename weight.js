@@ -27,7 +27,13 @@ export function normalizeWeights(raw) {
     .map(e => ({ d: e.d, kg: Math.round(e.kg * 100) / 100 }))
     .sort((a, b) => a.d.localeCompare(b.d));
   const goalKg = Number.isFinite(raw?.goalKg) && raw.goalKg >= 20 && raw.goalKg <= 400 ? raw.goalKg : null;
-  return { entries, goalKg };
+  // Tape measurements in cm for the body fat estimate (bodyfat.js), one set per day.
+  const cm = (v, lo, hi) => Number.isFinite(v) && v >= lo && v <= hi;
+  const tape = (Array.isArray(raw?.tape) ? raw.tape : [])
+    .filter(t => t && ISO_RE.test(t.d) && cm(t.waist, 40, 200) && cm(t.neck, 20, 70))
+    .map(t => ({ d: t.d, waist: t.waist, neck: t.neck, ...(cm(t.hip, 50, 200) && { hip: t.hip }) }))
+    .sort((a, b) => a.d.localeCompare(b.d));
+  return { entries, goalKg, tape };
 }
 
 export function withTrend(entries) {
@@ -227,7 +233,7 @@ async function onListClick(e) {
     confirmDel = null;
     const cur = data();
     try {
-      await ctx.store().saveWeights({ entries: cur.entries.filter(x => x.d !== d), goalKg: cur.goalKg });
+      await ctx.store().saveWeights({ ...cur, entries: cur.entries.filter(x => x.d !== d) });
       const synced = await ctx.onWeighIn();
       ctx.toast(synced ? `Weigh-in deleted. Maintenance now uses ${dateShort(synced.d)}’s, ${wfmt(synced.kg)}.` : 'Weigh-in deleted');
     }
@@ -252,7 +258,7 @@ async function onSave(e) {
   const entries = cur.entries.filter(x => x.d !== d).concat({ d, kg: Math.round(kg * 100) / 100 }).sort((a, b) => a.d.localeCompare(b.d));
   $('wt-save').disabled = true;
   try {
-    await ctx.store().saveWeights({ entries, goalKg: cur.goalKg });
+    await ctx.store().saveWeights({ ...cur, entries });
     $('wt-value').value = '';
     $('wt-value').blur();
     const synced = await ctx.onWeighIn();
@@ -272,7 +278,7 @@ async function onGoal(e) {
 async function saveGoal(goalKg) {
   if (!ctx.store()) return ctx.toast(ctx.saveError({ code: 'not_ready' }));
   try {
-    await ctx.store().saveWeights({ entries: data().entries, goalKg });
+    await ctx.store().saveWeights({ ...data(), goalKg });
     $('wt-goal').blur();
     ctx.toast(goalKg ? `Goal set: ${wfmt(goalKg)}` : 'Goal cleared');
   } catch (er) { ctx.toast(ctx.saveError(er)); }
